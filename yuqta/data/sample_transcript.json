@@ -1,0 +1,10 @@
+{
+  "title": "Enterprise Revenue Review",
+  "participants": ["Sales Manager", "Finance Manager", "Product Manager"],
+  "segments": [
+    { "index": 0, "speaker": "Sales Manager", "start_seconds": 0.0, "end_seconds": 3.2, "text": "Enterprise revenue is down this month." },
+    { "index": 1, "speaker": "Finance Manager", "start_seconds": 3.6, "end_seconds": 6.9, "text": "Acme reduced their order significantly." },
+    { "index": 2, "speaker": "Product Manager", "start_seconds": 7.3, "end_seconds": 9.8, "text": "Beta also hasn't renewed yet." },
+    { "index": 3, "speaker": "Sales Manager", "start_seconds": 10.2, "end_seconds": 13.5, "text": "We should contact both customers this week." }
+  ]
+}

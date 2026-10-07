@@ -1,0 +1,4 @@
+# Keep Unix line endings in the repo and working tree: the code runs in Linux containers.
+* text=auto eol=lf
+*.png binary
+*.ico binary

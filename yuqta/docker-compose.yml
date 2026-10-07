@@ -1,0 +1,61 @@
+name: yuqta
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yuqta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yuqta}
+      POSTGRES_DB: ${POSTGRES_DB:-yuqta}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # Inside the Compose network the database host is always `postgres`.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yuqta}:${POSTGRES_PASSWORD:-yuqta}@postgres:5432/${POSTGRES_DB:-yuqta}
+      SEED_SQL_PATH: /data/seed.sql
+      SAMPLE_TRANSCRIPT_PATH: /data/sample_transcript.json
+      # Browser-facing URLs follow the published host ports unless set explicitly in .env.
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:${BACKEND_HOST_PORT:-8000}/auth/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_HOST_PORT:-3000}}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    environment:
+      API_INTERNAL_URL: http://backend:8000
+      # Only what the frontend needs; the backend's provider keys never reach this container.
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -1,0 +1,112 @@
+from functools import lru_cache
+import re
+from pathlib import Path
+from typing import Literal
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings, read from environment variables (and `.env` if present)."""
+
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+
+    app_name: str = "Yuqta"
+    app_env: Literal["development", "test", "production"] = "development"
+    log_level: str = "INFO"
+    database_url: str = "postgresql://yuqta:yuqta@localhost:5433/yuqta"
+    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Shared secret between the Next.js server and this API. Empty = no API auth (local dev).
+    api_auth_token: str = ""
+    # Docker mounts ./data at /data; locally the repo's data/ folder is used.
+    seed_sql_path: str = str(Path(__file__).resolve().parents[3] / "data" / "seed.sql")
+    # Load the demo customers (Acme, Beta, Gamma) into an empty database on startup.
+    demo_business_data: bool = True
+    sample_transcript_path: str = str(Path(__file__).resolve().parents[3] / "data" / "sample_transcript.json")
+
+    stt_provider: Literal["mock", "deepgram"] = "mock"
+    deepgram_api_key: str = ""
+    deepgram_model: str = "nova-3"
+    stt_language: str = "en"
+    max_audio_mb: int = 200
+    llm_provider: str = "mock"  # mock | openrouter | anthropic
+    llm_api_key: str = ""
+    llm_model: str = "typesafe/jev-router"  # OpenRouter id; Claude ids only with LLM_PROVIDER=anthropic
+    llm_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+
+    google_mode: Literal["mock", "live"] = "mock"
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Google redirects the browser here; it must be the backend's public URL.
+    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+    # Where the browser is sent back to after connecting Google.
+    frontend_url: str = "http://localhost:3000"
+    # Auto-import: Meet "transcript ready" events delivered to this Pub/Sub topic, pulled from this subscription.
+    #   projects/<project-id>/topics/<topic>   and   projects/<project-id>/subscriptions/<subscription>
+    google_pubsub_topic: str = ""
+    google_pubsub_subscription: str = ""
+    auto_import_poll_seconds: int = 15
+
+    # Meeting bot: a "Yuqta Notetaker" participant that joins a call, records it and hands back the transcript.
+    # mock: simulated bot (no key).  recall: Recall.ai (https://www.recall.ai), needs RECALL_API_KEY.
+    meeting_bot_provider: Literal["mock", "recall"] = "mock"
+    recall_api_key: str = ""
+    # The region your Recall.ai workspace lives in (pay-as-you-go accounts are us-west-2).
+    recall_region: Literal["us-east-1", "us-west-2", "eu-central-1", "ap-northeast-1"] = "us-west-2"
+    # Language of the meeting bot's transcript. "auto" detects it and follows switches between languages
+    # in one meeting (e.g. Hindi and English, Hinglish). Or a fixed code such as en or hi.
+    recall_language: str = "auto"
+    # Who transcribes the bot's recording. recallai: Recall.ai's own transcription (no extra setup).
+    # deepgram: Deepgram nova-3 through Recall.ai; add your Deepgram API key and project id in the
+    # Recall.ai dashboard (same region) first. aws: Amazon Transcribe through Recall.ai; add an AWS access key
+    # (IAM user allowed transcribe:StartStreamTranscription*) in the Recall.ai dashboard first.
+    # All three follow language switches (e.g. Hindi/English) within one meeting.
+    bot_transcription: Literal["recallai", "deepgram", "aws"] = "recallai"
+    # AWS Transcribe: languages to detect and switch between (first = preferred), as AWS language codes.
+    aws_language_options: str = "en-IN,hi-IN"
+    bot_name: str = "Yuqta Notetaker"
+    bot_poll_seconds: int = 15
+
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def auto_import_configured(self) -> bool:
+        return bool(self.google_pubsub_topic and self.google_pubsub_subscription)
+
+    @field_validator("google_pubsub_topic")
+    @classmethod
+    def topic_format(cls, value: str) -> str:
+        if value and not re.fullmatch(r"projects/[\w.:-]+/topics/[\w.~%+-]+", value):
+            raise ValueError("GOOGLE_PUBSUB_TOPIC must look like projects/<project-id>/topics/<topic>")
+        return value
+
+    @field_validator("google_pubsub_subscription")
+    @classmethod
+    def subscription_format(cls, value: str) -> str:
+        if value and not re.fullmatch(r"projects/[\w.:-]+/subscriptions/[\w.~%+-]+", value):
+            raise ValueError("GOOGLE_PUBSUB_SUBSCRIPTION must look like projects/<project-id>/subscriptions/<name>")
+        return value
+
+    @field_validator("google_redirect_uri", "frontend_url", mode="before")
+    @classmethod
+    def blank_means_default(cls, value: str, info) -> str:
+        # .env.example ships these keys empty; treat empty as "use the default".
+        return value or cls.model_fields[info.field_name].default
+
+    @field_validator("database_url")
+    @classmethod
+    def use_psycopg_driver(cls, value: str) -> str:
+        # Accept the conventional postgresql:// URL and select the psycopg 3 driver.
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgresql://")
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgres://")
+        return value
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

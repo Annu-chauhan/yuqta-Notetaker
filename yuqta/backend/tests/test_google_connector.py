@@ -7,7 +7,7 @@ import pytest
 
 from app.connectors.google import GoogleConnector, get_google_connector
 from app.connectors.google.client import GoogleWorkspaceClient, entries_to_segments
-from app.connectors.google.mock import SAMPLE_CODE, STANDUP_CODE, MockGoogleWorkspaceClient
+from app.connectors.google.mock import SAMPLE_CODE, STANDUP_CODE, UPCOMING_CODE, MockGoogleWorkspaceClient
 from app.core.config import Settings, get_settings
 from app.main import app
 
@@ -85,10 +85,12 @@ def test_events_and_transcripts(google: TestClient) -> None:
     _connect(google)
     events = google.get("/api/google/events").json()["events"]
     assert [(e["title"], e["meeting_code"]) for e in events] == [
+        ("Weekly sync", UPCOMING_CODE),
         ("Product standup", STANDUP_CODE),
         ("Enterprise Revenue Review", SAMPLE_CODE),
-    ]  # the non-Meet "Team lunch" is filtered out
-    review = events[1]
+    ]  # most recent first; the non-Meet "Team lunch" is filtered out
+    assert google.get("/api/google/events", params={"days_ahead": 0}).json()["events"][0]["title"] == "Product standup"
+    review = events[2]
     assert review["attendees"] == ["Sales Manager", "Finance Manager", "Product Manager"]
 
     records = google.get(
@@ -102,7 +104,7 @@ def test_events_and_transcripts(google: TestClient) -> None:
 
 def test_import_then_analyze(google: TestClient) -> None:
     _connect(google)
-    review = google.get("/api/google/events").json()["events"][1]
+    review = google.get("/api/google/events").json()["events"][2]
     record = google.get("/api/google/conference-records", params={"meeting_code": SAMPLE_CODE}).json()["conference_records"][0]
     imported = google.post(
         "/api/google/import",

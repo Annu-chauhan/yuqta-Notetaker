@@ -7,7 +7,7 @@ for _provider_key in ("STT_PROVIDER", "LLM_PROVIDER", "GOOGLE_MODE", "MEETING_BO
     os.environ[_provider_key] = "mock"
 # Never let real credentials from .env / the container reach tests (or real APIs).
 for _secret in ("DEEPGRAM_API_KEY", "LLM_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "ANTHROPIC_API_KEY",
-                "RECALL_API_KEY"):
+                "RECALL_API_KEY", "TOKEN_ENCRYPTION_KEY"):
     os.environ[_secret] = ""
 os.environ["LLM_MODEL"] = "typesafe/jev-router"
 

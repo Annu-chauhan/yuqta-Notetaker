@@ -134,8 +134,9 @@ def validated_signals(extraction: Extraction, segments: Sequence[SegmentIn], kno
 
 _MAX_ITEMS = 20
 _LONG_LINE = 280  # characters; longer transcript lines are quoted by their most relevant sentence
-_WORD = re.compile(r"[\w']+")
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# \w misses Devanagari vowel signs (e.g. the ा in करना), so include the whole Devanagari block.
+_WORD = re.compile(r"[\wऀ-ॿ']+")
+_SENTENCE_END = re.compile(r"(?<=[.!?।॥])\s+")  # ।/॥ end sentences in Hindi
 
 
 def _quote(text: str, about: str) -> str:

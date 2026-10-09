@@ -92,9 +92,12 @@ curl http://localhost:8000/health
 | GET | `/api/meetings/{id}/dashboard` | The meeting's dashboard spec (404 until analyzed) |
 | GET | `/api/dashboard/latest` | The dashboard updated by the most recent analysis |
 | POST | `/api/bots` | Send the Yuqta notetaker into a live call (`meeting_url`: Google Meet, Zoom or Teams link; optional `title`) |
-| GET | `/api/bots` | Recent bots with their status (`joining` → `waiting` → `recording` → `processing` → `analyzed`, or `failed`) |
+| GET | `/api/bots` | Recent bots with their status (`scheduled` → `joining` → `waiting` → `recording` → `processing` → `analyzed`, or `failed` / `cancelled`) |
 | POST | `/api/bots/check` | Check active bots now instead of waiting for the background poll |
-| POST | `/api/bots/{id}/leave` | Make the bot leave; what it recorded is still transcribed and analyzed |
+| POST | `/api/bots/{id}/leave` | Make the bot leave; what it recorded is still transcribed and analyzed. A `scheduled` bot is cancelled instead |
+| GET | `/api/bots/calendar` | Calendar auto-join state: enabled, Google connection, last run, recent changes |
+| POST | `/api/bots/calendar/sync` | Read the calendar now and schedule, reschedule or cancel bots (409 when `AUTO_JOIN_CALENDAR=false`) |
+| GET | `/api/history` | Recent meetings (`limit`, default 100) with all their action items, decisions, risks and open questions in one place |
 | GET | `/api/system` | Active providers and upload limit (never keys) |
 | GET | `/api/google/status` | Connector mode and connection state |
 | POST | `/api/google/connect` | Returns the Google sign-in URL (mock mode: straight to the callback) |
@@ -189,6 +192,29 @@ call is imported once (`meetings.external_ref`). Bot state lives in the `meeting
 
 Notes: someone must admit the bot (a waiting room times out after about 20 minutes), the bot cannot join meetings
 that only allow signed-in users of an organisation, and tell participants that the meeting is being recorded.
+
+#### Calendar auto-join
+
+With `AUTO_JOIN_CALENDAR=true`, Yuqta sends the bot to every Google Meet on the connected Google Calendar, so
+nobody has to paste links. A background worker reads the next `AUTO_JOIN_HOURS_AHEAD` (24) hours every
+`AUTO_JOIN_POLL_SECONDS` (120) and, per Meet event:
+
+- schedules a bot (status `scheduled`) to join a minute before the start — Recall.ai guarantees on-time joining
+  for bots scheduled more than 10 minutes ahead — or sends one right away if the meeting has already started;
+- reschedules it when the event moves, and cancels it when the event is deleted or you decline it;
+- skips all-day events, declined events and events without a Meet link.
+
+Each event gets at most one bot, and bots within 10 minutes of joining (or already in the call) are never touched.
+The **Live meetings** panel shows the auto-join state, the last changes and a **Check calendar now** button;
+scheduled bots can be cancelled there. Needs **Connect Google** on the Import page (reconnect after a backend
+restart); with `GOOGLE_MODE=mock` it runs against the fake calendar.
+
+### Meeting history
+
+**History** (`/history`, API `GET /api/history`) puts what all meetings produced side by side: totals, every
+action item (owner and due date), decision, risk and open question with the meeting and quote it came from, and
+who owns the most actions. It reads the stored analysis only, so it never calls the LLM. Meetings analyzed before
+meeting-first analysis are listed with zero counts — re-run their analysis to fill them in.
 
 ### Automatic import of finished meetings
 
@@ -311,6 +337,7 @@ All configuration comes from environment variables (see `.env.example`). Secrets
 | `LLM_PROVIDER` | `mock` | `mock` until a real provider is configured |
 | `GOOGLE_MODE` | `mock` | `mock` or `live` |
 | `MEETING_BOT_PROVIDER` | `mock` | `mock` or `recall` (needs `RECALL_API_KEY`) |
+| `DISPLAY_TIMEZONE` | `UTC` | IANA time zone for times shown in the app and in bot messages, e.g. `Asia/Kolkata` (shown as IST) |
 
 ## Roadmap
 

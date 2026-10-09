@@ -164,7 +164,7 @@ def test_recall_client_can_transcribe_with_deepgram() -> None:
     client = RecallMeetingBotClient("k", "us-west-2", "auto", transport=httpx.MockTransport(handler), transcription="deepgram")
     client.create_bot("https://meet.google.com/abc-defg-hij", "Yuqta")
     assert bodies[0]["recording_config"]["transcript"]["provider"] == {"deepgram_streaming": {"model": "nova-3", "language": "multi"}}
-    with pytest.raises(BotError, match="add your Deepgram API key and project id in the Recall.ai dashboard"):
+    with pytest.raises(BotError, match="To use Deepgram, add your Deepgram API key and project id in the Recall.ai dashboard"):
         client.create_bot("https://meet.google.com/abc-defg-hij", "Yuqta")
 
 
@@ -282,3 +282,23 @@ def test_fatal_status_is_explained(bots: TestClient, clock: Clock, seeded_db) ->
     assert bot["status"] == "failed" and bot["detail"] == "The meeting link does not exist."
     with seeded_db() as db:
         assert db.get(MeetingBot, __import__("uuid").UUID(sent["id"])).provider_status == "fatal"
+
+
+
+def test_delete_bot_entry_and_its_meeting(bots: TestClient, clock: Clock) -> None:
+    sent = _send(bots)
+    assert bots.delete(f"/api/bots/{sent['id']}").status_code == 409  # still joining
+    clock.now += 30
+    done = _check(bots)
+    assert done["status"] == "analyzed"
+    assert bots.delete(f"/api/bots/{sent['id']}").status_code == 204
+    assert bots.get("/api/bots").json()["bots"] == []
+    assert bots.get(f"/api/meetings/{done['meeting_id']}").status_code == 404  # its meeting went too
+    assert bots.delete(f"/api/bots/{sent['id']}").status_code == 404
+
+    failed = _send(bots, url="https://meet.google.com/xyz-abcd-efg")
+    clock.now += 5
+    bots.post(f"/api/bots/{failed['id']}/leave")
+    clock.now += 10
+    assert _check(bots)["status"] == "failed"
+    assert bots.delete(f"/api/bots/{failed['id']}").status_code == 204  # failed entry, no meeting

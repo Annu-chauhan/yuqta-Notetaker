@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.connectors.meeting_bot.base import BotError, BotState, MeetingBotClient, parse_transcript
+from app.core.config import local_time
 from app.db.models import MeetingBot
 from app.plugins.llm.base import LLMProvider
 from app.workflows.analyze_meeting import analyze_meeting
@@ -24,7 +25,7 @@ from app.workflows.ingest_meeting import IngestionError, ingest_from_segments
 
 logger = logging.getLogger(__name__)
 
-ACTIVE = ("joining", "waiting", "in_call", "recording", "processing")
+ACTIVE = ("scheduled", "joining", "waiting", "in_call", "recording", "processing")
 
 # Provider status -> Yuqta bot status, while the call is going on.
 _LIVE_STATUS = {
@@ -60,21 +61,44 @@ _FATAL_DETAIL = {
 }
 
 
-def send_bot(db: Session, client: MeetingBotClient, meeting_url: str, title: str, bot_name: str) -> MeetingBot:
-    external_id = client.create_bot(meeting_url, bot_name)
+def send_bot(
+    db: Session,
+    client: MeetingBotClient,
+    meeting_url: str,
+    title: str,
+    bot_name: str,
+    join_at: datetime | None = None,
+    calendar_event_id: str | None = None,
+) -> MeetingBot:
+    """Sends the bot now, or schedules it for join_at (a time in the future)."""
+    scheduled = join_at is not None and join_at > datetime.now(timezone.utc)
+    external_id = client.create_bot(meeting_url, bot_name, join_at if scheduled else None)
     bot = MeetingBot(
         provider=client.name,
         external_id=external_id,
         meeting_url=meeting_url,
         title=title,
-        status="joining",
-        provider_status="joining_call",
-        detail=_LIVE_DETAIL["joining"],
+        status="scheduled" if scheduled else "joining",
+        provider_status=None if scheduled else "joining_call",
+        detail=_scheduled_detail(join_at) if scheduled else _LIVE_DETAIL["joining"],
+        join_at=join_at if scheduled else None,
+        calendar_event_id=calendar_event_id,
     )
     db.add(bot)
     db.commit()
     logger.info("Bot %s (%s %s) sent to %s", bot.id, client.name, external_id, meeting_url)
     return bot
+
+
+def cancel_bot(db: Session, client: MeetingBotClient, bot: MeetingBot, reason: str) -> None:
+    """Cancels a scheduled bot before it joins (raises BotError if it already started joining)."""
+    client.delete_scheduled_bot(bot.external_id)
+    _set(bot, "cancelled", reason)
+    db.commit()
+
+
+def _scheduled_detail(join_at: datetime) -> str:
+    return f"Scheduled: joins at {local_time(join_at, '%d %b %Y, %H:%M')}."
 
 
 def list_bots(db: Session, limit: int = 20) -> list[MeetingBot]:
@@ -122,7 +146,9 @@ def refresh_bot(db: Session, client: MeetingBotClient, bot_id: UUID, llm_factory
         return bot
 
     bot.provider_status = state.code[:60]
-    if state.code == "fatal":
+    if bot.status == "scheduled" and state.code in ("scheduled", "ready", "unknown"):
+        pass  # still waiting for its join time
+    elif state.code == "fatal":
         _set(bot, "failed", _FATAL_DETAIL.get(state.sub_code or "", state.message or "The bot stopped with an error."))
     elif state.code == "done" or (state.code == "call_ended" and state.transcript_status == "done"):
         _finish(db, client, bot, state, llm_factory)

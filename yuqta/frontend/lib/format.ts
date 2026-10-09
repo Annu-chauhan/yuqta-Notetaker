@@ -1,12 +1,15 @@
-// Rendered on the server, so use a fixed time zone rather than the container's locale.
-const dateTime = new Intl.DateTimeFormat("en-GB", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "UTC",
-});
+// Rendered on the server, so use a configured time zone (DISPLAY_TIMEZONE, shared with the backend)
+// rather than the container's locale.
+const timeZone = process.env.DISPLAY_TIMEZONE || "UTC";
+const dateTime = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone });
+// Short zone name, e.g. "IST" for Asia/Kolkata.
+const zoneLabel =
+  new Intl.DateTimeFormat("en-IN", { timeZone, timeZoneName: "short" })
+    .formatToParts(new Date())
+    .find((part) => part.type === "timeZoneName")?.value ?? timeZone;
 
 export function formatDateTime(value: string | null): string {
-  return value ? `${dateTime.format(new Date(value))} UTC` : "—";
+  return value ? `${dateTime.format(new Date(value))} ${zoneLabel}` : "—";
 }
 
 export function formatSeconds(value: number | null): string {

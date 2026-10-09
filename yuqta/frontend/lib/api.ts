@@ -76,6 +76,7 @@ async function request<T>(path: string, { timeoutMs = 10_000, headers, ...init }
     const detail = typeof body.detail === "string" ? body.detail : `Request failed (${response.status})`;
     throw new ApiError(detail, response.status);
   }
+  if (response.status === 204) return undefined as T; // e.g. DELETE: no body
   return (await response.json()) as T;
 }
 
@@ -209,7 +210,7 @@ export type BarChartWidget = {
   subtitle: string;
   orientation: "vertical" | "horizontal";
   category_key: string;
-  unit: "usd" | "units" | "percent";
+  unit: "usd" | "units" | "percent" | "count";
   series: ChartSeries[];
   data: Record<string, number | string>[];
 };
@@ -348,6 +349,7 @@ export const simulateFinishedMeeting = () =>
 // --- Live meetings: the Yuqta notetaker bot ----------------------------------------------
 
 export type BotStatus =
+  | "scheduled"
   | "joining"
   | "waiting"
   | "in_call"
@@ -355,7 +357,8 @@ export type BotStatus =
   | "processing"
   | "transcribed"
   | "analyzed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type MeetingBot = {
   id: string;
@@ -366,6 +369,8 @@ export type MeetingBot = {
   provider_status: string | null;
   detail: string;
   meeting_id: string | null;
+  join_at: string | null;
+  calendar_event_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -381,7 +386,80 @@ export type MeetingBotList = {
 export const listBots = () => request<MeetingBotList>("/api/bots");
 export const sendBot = (body: { meeting_url: string; title: string }) =>
   request<MeetingBot>("/api/bots", { ...json(body), timeoutMs: 30_000 });
+export const deleteBot = (botId: string) =>
+  request<void>(`/api/bots/${encodeURIComponent(botId)}`, { method: "DELETE", timeoutMs: 30_000 });
 export const leaveBot = (botId: string) =>
   request<MeetingBot>(`/api/bots/${encodeURIComponent(botId)}/leave`, { method: "POST", timeoutMs: 30_000 });
 // Checking can import and analyze a finished call (an LLM call), so allow time.
 export const checkBots = () => request<MeetingBotList>("/api/bots/check", { method: "POST", timeoutMs: 180_000 });
+
+export type CalendarAutoJoin = {
+  enabled: boolean;
+  google_mode: "mock" | "live";
+  google_connected: boolean;
+  hours_ahead: number;
+  poll_seconds: number;
+  last_run_at: string | null;
+  last_error: string | null;
+  recent: string[];
+};
+
+export const getCalendarAutoJoin = () => request<CalendarAutoJoin>("/api/bots/calendar");
+export const syncCalendar = () => request<CalendarAutoJoin>("/api/bots/calendar/sync", { method: "POST", timeoutMs: 60_000 });
+
+// --- Meeting history ---------------------------------------------------------------------
+
+export type HistoryMeeting = {
+  id: string;
+  title: string;
+  date: string;
+  source: string;
+  status: MeetingSummary["status"];
+  headline: string | null;
+  meeting_type: MeetingIntelligence["meeting_type"] | null;
+  participants: string[];
+  action_items: number;
+  decisions: number;
+  risks: number;
+  open_questions: number;
+};
+
+export type HistoryItem = {
+  kind: "action_items" | "decisions" | "risks" | "open_questions";
+  index: number;
+  text: string;
+  owner: string | null;
+  due: string | null;
+  meeting_id: string;
+  meeting_title: string;
+  date: string;
+  speaker: string;
+  quote: string;
+};
+
+export type MeetingHistory = {
+  totals: {
+    meetings: number;
+    analyzed: number;
+    action_items: number;
+    unassigned_action_items: number;
+    decisions: number;
+    risks: number;
+    open_questions: number;
+  };
+  meetings: HistoryMeeting[];
+  action_items: HistoryItem[];
+  decisions: HistoryItem[];
+  risks: HistoryItem[];
+  open_questions: HistoryItem[];
+  owners: { owner: string; action_items: number }[];
+};
+
+export const getHistory = () => request<MeetingHistory>("/api/history");
+export const deleteMeetingItem = (meetingId: string, kind: HistoryItem["kind"], index: number, text: string) =>
+  request<void>(
+    `/api/meetings/${encodeURIComponent(meetingId)}/items/${kind}/${index}?${new URLSearchParams({ text })}`,
+    { method: "DELETE" },
+  );
+export const deleteMeeting = (meetingId: string) =>
+  request<void>(`/api/meetings/${encodeURIComponent(meetingId)}`, { method: "DELETE" });

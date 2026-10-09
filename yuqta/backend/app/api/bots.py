@@ -10,7 +10,9 @@ from app.core.config import Settings, get_settings
 from app.db.models import MeetingBot
 from app.db.session import get_db, get_session_factory
 from app.plugins.llm.factory import build_llm_provider
-from app.workflows.meeting_bot import ACTIVE, list_bots, meeting_bot_poller, send_bot
+from app.connectors.google import GoogleConnector, get_google_connector
+from app.workflows.calendar_auto_join import calendar_auto_joiner
+from app.workflows.meeting_bot import ACTIVE, cancel_bot, list_bots, meeting_bot_poller, send_bot
 
 
 router = APIRouter(prefix="/api/bots", tags=["meeting bots"])
@@ -32,6 +34,8 @@ class BotOut(BaseModel):
     provider_status: str | None
     detail: str
     meeting_id: UUID | None
+    join_at: datetime | None
+    calendar_event_id: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -99,6 +103,12 @@ def leave_call(bot_id: UUID, db: Session = Depends(get_db), client: MeetingBotCl
         raise HTTPException(status_code=404, detail="Bot not found")
     if bot.provider != client.name:
         raise HTTPException(status_code=409, detail=f"This bot was sent with the {bot.provider} provider.")
+    if bot.status == "scheduled":
+        try:
+            cancel_bot(db, client, bot, "Cancelled before the meeting.")
+        except BotError as error:
+            raise HTTPException(status_code=409 if error.status_code == 400 else error.status_code, detail=str(error)) from error
+        return BotOut.model_validate(bot)
     if bot.status not in ACTIVE or bot.status == "processing":
         raise HTTPException(status_code=409, detail="The bot is no longer in the call.")
     try:
@@ -110,3 +120,56 @@ def leave_call(bot_id: UUID, db: Session = Depends(get_db), client: MeetingBotCl
     bot.detail = "Leaving the call…"
     db.commit()
     return BotOut.model_validate(bot)
+
+
+
+@router.delete("/{bot_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bot(bot_id: UUID, db: Session = Depends(get_db)) -> None:
+    """Removes a finished or failed bot from the list, together with the meeting it produced (if any)."""
+    from app.db import meetings as meetings_repo
+
+    bot = db.get(MeetingBot, bot_id)
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    if bot.status in ACTIVE:
+        action = "Cancel it" if bot.status == "scheduled" else "End the recording"
+        raise HTTPException(status_code=409, detail=f"The bot is still active. {action} first.")
+    meeting_id = bot.meeting_id
+    db.delete(bot)
+    db.commit()
+    if meeting_id is not None:
+        meetings_repo.delete_meeting(db, meeting_id)
+
+# --- Calendar auto-join ---------------------------------------------------------------------
+
+
+def _auto_join_status(settings: Settings, connector: GoogleConnector) -> dict:
+    return {
+        "enabled": settings.auto_join_calendar,
+        "google_mode": connector.mode,
+        "google_connected": connector.connected,
+        "hours_ahead": settings.auto_join_hours_ahead,
+        "poll_seconds": settings.auto_join_poll_seconds,
+        **calendar_auto_joiner.status(),
+    }
+
+
+@router.get("/calendar")
+def calendar_auto_join_status(
+    settings: Settings = Depends(get_settings), connector: GoogleConnector = Depends(get_google_connector)
+) -> dict:
+    return _auto_join_status(settings, connector)
+
+
+@router.post("/calendar/sync")
+def calendar_auto_join_sync(
+    settings: Settings = Depends(get_settings),
+    connector: GoogleConnector = Depends(get_google_connector),
+    client: MeetingBotClient = Depends(get_meeting_bot_client),
+    session_factory=Depends(get_session_factory),
+) -> dict:
+    """Reads the calendar now and schedules/reschedules/cancels bots, instead of waiting for the next run."""
+    if not settings.auto_join_calendar:
+        raise HTTPException(status_code=409, detail="Calendar auto-join is off. Set AUTO_JOIN_CALENDAR=true.")
+    calendar_auto_joiner.run_once(connector, client, session_factory, settings.bot_name, settings.auto_join_hours_ahead)
+    return _auto_join_status(settings, connector)

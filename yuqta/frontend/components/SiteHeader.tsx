@@ -24,6 +24,9 @@ export function SiteHeader() {
           <Link href="/dashboard" className={navLink}>
             Dashboard
           </Link>
+          <Link href="/history" className={navLink}>
+            History
+          </Link>
           {authEnabled() ? (
             <form action={logoutAction}>
               <button type="submit" className={navLink}>

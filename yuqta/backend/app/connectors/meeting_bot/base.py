@@ -37,8 +37,11 @@ class BotState:
 class MeetingBotClient(Protocol):
     name: str
 
-    def create_bot(self, meeting_url: str, bot_name: str) -> str:
-        """Sends a bot into the call; returns the provider's bot id."""
+    def create_bot(self, meeting_url: str, bot_name: str, join_at: datetime | None = None) -> str:
+        """Sends a bot into the call now, or at join_at; returns the provider's bot id."""
+
+    def delete_scheduled_bot(self, bot_id: str) -> None:
+        """Cancels a bot that has not started joining yet."""
 
     def get_bot(self, bot_id: str) -> BotState: ...
 

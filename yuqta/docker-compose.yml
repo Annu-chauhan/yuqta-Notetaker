@@ -3,6 +3,7 @@ name: yuqta
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped  # come back after a Docker or PC restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-yuqta}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yuqta}
@@ -19,6 +20,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped  # come back after a Docker or PC restart
     env_file: .env
     environment:
       # Inside the Compose network the database host is always `postgres`.
@@ -44,6 +46,7 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped  # come back after a Docker or PC restart
     environment:
       API_INTERNAL_URL: http://backend:8000
       # Only what the frontend needs; the backend's provider keys never reach this container.
@@ -51,6 +54,7 @@ services:
       APP_PASSWORD: ${APP_PASSWORD:-}
       AUTH_SECRET: ${AUTH_SECRET:-}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      DISPLAY_TIMEZONE: ${DISPLAY_TIMEZONE:-UTC}
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:

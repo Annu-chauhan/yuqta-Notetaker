@@ -5,6 +5,7 @@ import { notFound, unstable_rethrow } from "next/navigation";
 import { AnalyzeMeetingButton } from "@/components/AnalyzeMeetingButton";
 import { MeetingAnalysis } from "@/components/analysis/MeetingAnalysis";
 import { SiteHeader } from "@/components/SiteHeader";
+import { DeleteMeetingButton } from "@/components/DeleteMeetingButton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ApiError, getAnalysis, getMeeting, type Analysis, type MeetingDetail } from "@/lib/api";
 import { formatDateTime, formatSeconds, formatSource } from "@/lib/format";
@@ -44,7 +45,10 @@ export default async function MeetingPage({ params }: PageProps<"/meetings/[id]"
 
         <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-3xl font-bold tracking-tight">{meeting.title}</h1>
-          <StatusBadge status={meeting.status} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={meeting.status} />
+            <DeleteMeetingButton meetingId={meeting.id} title={meeting.title} redirectTo="/meetings" showText />
+          </div>
         </div>
 
         <dl className="mt-6 grid gap-4 rounded-lg border border-line bg-surface p-4 text-sm sm:grid-cols-3">

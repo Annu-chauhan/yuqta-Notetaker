@@ -1,7 +1,9 @@
+from datetime import datetime
 from functools import lru_cache
 import re
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,6 +46,9 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     # Auto-import: Meet "transcript ready" events delivered to this Pub/Sub topic, pulled from this subscription.
     #   projects/<project-id>/topics/<topic>   and   projects/<project-id>/subscriptions/<subscription>
+    # Encrypts stored connector tokens so the Google connection survives restarts (empty: memory only).
+    # Generate:  python -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+    token_encryption_key: str = ""
     google_pubsub_topic: str = ""
     google_pubsub_subscription: str = ""
     auto_import_poll_seconds: int = 15
@@ -66,7 +71,13 @@ class Settings(BaseSettings):
     # AWS Transcribe: languages to detect and switch between (first = preferred), as AWS language codes.
     aws_language_options: str = "en-IN,hi-IN"
     bot_name: str = "Yuqta Notetaker"
+    # Calendar auto-join: send the bot to every Google Meet on the connected Google Calendar.
+    auto_join_calendar: bool = False
+    auto_join_hours_ahead: int = 24
+    auto_join_poll_seconds: int = 120
     bot_poll_seconds: int = 15
+    # IANA time zone for times shown to people (e.g. Asia/Kolkata); the frontend reads the same variable.
+    display_timezone: str = "UTC"
 
     @property
     def google_configured(self) -> bool:
@@ -90,6 +101,15 @@ class Settings(BaseSettings):
             raise ValueError("GOOGLE_PUBSUB_SUBSCRIPTION must look like projects/<project-id>/subscriptions/<name>")
         return value
 
+    @field_validator("display_timezone")
+    @classmethod
+    def known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError(f"DISPLAY_TIMEZONE must be an IANA time zone such as Asia/Kolkata, not {value!r}") from error
+        return value
+
     @field_validator("google_redirect_uri", "frontend_url", mode="before")
     @classmethod
     def blank_means_default(cls, value: str, info) -> str:
@@ -110,3 +130,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def local_time(value: datetime, fmt: str) -> str:
+    """Formats an aware datetime in DISPLAY_TIMEZONE, followed by the zone's abbreviation (e.g. "10:29 IST")."""
+    local = value.astimezone(ZoneInfo(get_settings().display_timezone))
+    return f"{local.strftime(fmt)} {local.tzname()}"

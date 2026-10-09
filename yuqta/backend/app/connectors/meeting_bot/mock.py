@@ -34,13 +34,25 @@ class MockMeetingBotClient:
         self._sample_path = sample_transcript_path
         self._clock = clock
         self._left: dict[str, float] = {}  # bot id -> when it was told to leave
+        self._deleted: set[str] = set()
 
-    def create_bot(self, meeting_url: str, bot_name: str) -> str:
-        return f"mock-{int(self._clock() * 1000)}-{secrets.token_hex(4)}"
+    def create_bot(self, meeting_url: str, bot_name: str, join_at: datetime | None = None) -> str:
+        # The id encodes when the bot joins: now, or the scheduled time.
+        start = join_at.timestamp() if join_at is not None else self._clock()
+        return f"mock-{int(start * 1000)}-{secrets.token_hex(4)}"
+
+    def delete_scheduled_bot(self, bot_id: str) -> None:
+        if self._clock() >= self._sent_at(bot_id):
+            raise BotError("The bot has already started joining.", status_code=400, permanent=True)
+        self._deleted.add(bot_id)
 
     def get_bot(self, bot_id: str) -> BotState:
         sent = self._sent_at(bot_id)
+        if bot_id in self._deleted:
+            raise BotError("No such mock bot.", status_code=404, permanent=True)
         elapsed = self._clock() - sent
+        if elapsed < 0:
+            return BotState(code="scheduled")  # waiting for its join time
         left = self._left.get(bot_id)
         if left is not None and left - sent < TIMELINE[-2][0]:
             # Told to leave early: the call ends then, and the transcript follows shortly after.

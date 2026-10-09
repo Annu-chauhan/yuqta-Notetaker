@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db import meetings as repo
@@ -14,6 +14,7 @@ from app.schemas.dashboard import DashboardSpec
 from app.schemas.meeting import MeetingCreate, MeetingDetail, MeetingSummary
 from app.schemas.transcript import AudioInput
 from app.workflows.analyze_meeting import AnalysisError, analyze_meeting, load_analysis, load_dashboard
+from app.workflows.edit_analysis import EditError, ItemKind, remove_item
 from app.workflows.ingest_meeting import IngestionError, ingest_from_audio, ingest_from_segments
 
 
@@ -106,6 +107,28 @@ def get_meeting(meeting_id: UUID, db: Session = Depends(get_db)) -> MeetingDetai
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return _detail(meeting)
+
+
+@router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_meeting(meeting_id: UUID, db: Session = Depends(get_db)) -> None:
+    """Deletes the meeting, its transcript, analysis and dashboard. Cannot be undone."""
+    if not repo.delete_meeting(db, meeting_id):
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+
+@router.delete("/{meeting_id}/items/{kind}/{index}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(
+    meeting_id: UUID,
+    kind: ItemKind,
+    index: int,
+    text: str = Query(min_length=1, max_length=2000),
+    db: Session = Depends(get_db),
+) -> None:
+    """Removes one task, decision, risk or open question from the meeting's analysis and dashboard."""
+    try:
+        remove_item(db, meeting_id, kind, index, text)
+    except EditError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
 
 
 @router.post("/{meeting_id}/analyze", response_model=AnalysisResult)

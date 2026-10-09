@@ -4,15 +4,18 @@ import { unstable_rethrow } from "next/navigation";
 import { connection } from "next/server";
 
 import { CreateSampleMeetingButton } from "@/components/CreateSampleMeetingButton";
+import { DeleteMeetingButton } from "@/components/DeleteMeetingButton";
 import { LiveMeetingsPanel } from "@/components/LiveMeetingsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { UploadAudioForm } from "@/components/UploadAudioForm";
 import {
   ApiError,
+  getCalendarAutoJoin,
   getSystemInfo,
   listBots,
   listMeetings,
+  type CalendarAutoJoin,
   type MeetingBotList,
   type MeetingSummary,
   type SystemInfo,
@@ -26,9 +29,10 @@ export default async function MeetingsPage() {
   let meetings: MeetingSummary[] = [];
   let system: SystemInfo | null = null;
   let bots: MeetingBotList | null = null;
+  let calendar: CalendarAutoJoin | null = null;
   let loadError: string | null = null;
   try {
-    [meetings, system, bots] = await Promise.all([listMeetings(), getSystemInfo(), listBots()]);
+    [meetings, system, bots, calendar] = await Promise.all([listMeetings(), getSystemInfo(), listBots(), getCalendarAutoJoin()]);
   } catch (error) {
     unstable_rethrow(error);
     loadError = error instanceof ApiError ? error.message : "Could not load meetings.";
@@ -56,7 +60,7 @@ export default async function MeetingsPage() {
 
         {bots && (
           <div className="mt-8">
-            <LiveMeetingsPanel data={bots} />
+            <LiveMeetingsPanel data={bots} calendar={calendar} />
           </div>
         )}
 
@@ -87,10 +91,10 @@ export default async function MeetingsPage() {
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
               {meetings.map((meeting) => (
-                <li key={meeting.id}>
+                <li key={meeting.id} className="flex items-center gap-2 pr-3 hover:bg-background">
                   <Link
                     href={`/meetings/${meeting.id}`}
-                    className="flex flex-col gap-2 px-4 py-4 hover:bg-background sm:flex-row sm:items-center sm:justify-between"
+                    className="flex min-w-0 flex-1 flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{meeting.title}</p>
@@ -101,6 +105,7 @@ export default async function MeetingsPage() {
                     </div>
                     <StatusBadge status={meeting.status} />
                   </Link>
+                  <DeleteMeetingButton meetingId={meeting.id} title={meeting.title} />
                 </li>
               ))}
             </ul>

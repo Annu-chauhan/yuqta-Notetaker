@@ -33,7 +33,7 @@ export function AutoImportPanel({ status }: { status: AutoImportStatus }) {
               ? `When a Google Meet call ends and its transcript is ready, Yuqta imports and analyzes it automatically (checked every ${status.poll_seconds}s).`
               : status.configured
                 ? "Connect Google to start listening for finished meetings."
-                : "Set GOOGLE_PUBSUB_TOPIC and GOOGLE_PUBSUB_SUBSCRIPTION (see the README) to import finished meetings automatically."}
+                : "Optional. Imports Google's own Meet transcripts, which only paid Google Workspace accounts with transcription produce (set GOOGLE_PUBSUB_TOPIC and GOOGLE_PUBSUB_SUBSCRIPTION, see the README). With a personal Gmail account, use calendar auto-join on the Meetings page: the Yuqta bot joins and transcribes every Meet itself."}
           </p>
           {status.last_poll_at && <p className="mt-1 text-xs text-muted">Last checked {formatDateTime(status.last_poll_at)}</p>}
         </div>

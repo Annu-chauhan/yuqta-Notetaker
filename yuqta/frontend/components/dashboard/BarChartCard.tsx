@@ -22,10 +22,11 @@ const BAR_MAX = 24; // px; marks never fill the whole band
 function formatValue(value: number, unit: BarChartWidget["unit"]): string {
   if (unit === "usd") return formatUsd(value);
   if (unit === "percent") return `${value.toFixed(1)}%`;
+  if (unit === "count") return formatNumber(value);
   return `${formatNumber(value)} units`;
 }
 
-const categoryLabels: Record<string, string> = { account: "Account", speaker: "Speaker" };
+const categoryLabels: Record<string, string> = { account: "Account", speaker: "Speaker", owner: "Owner" };
 
 function seriesColor(series: ChartSeries, colors: VizColors): string {
   return colors[series.role];
@@ -110,7 +111,7 @@ export function BarChartCard({ widget }: { widget: BarChartWidget }) {
   const tickFormatter = (value: number) => formatValue(value, widget.unit);
   // Declines are drawn as positive lengths, so their axis shows the negated value.
   const axisSign = widget.series.some((s) => s.role === "decline") ? -1 : 1;
-  const categoryWidth = widget.category_key === "speaker" ? 120 : 64;
+  const categoryWidth = widget.category_key === "account" ? 64 : 120;
 
   // Declines are drawn as positive lengths from the baseline; labels keep the sign.
   const data = horizontal

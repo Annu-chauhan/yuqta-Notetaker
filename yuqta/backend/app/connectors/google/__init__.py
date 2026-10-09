@@ -14,7 +14,11 @@ def _connector() -> GoogleConnector:
         client: GoogleWorkspaceClient = MockGoogleWorkspaceClient(settings)
     else:
         client = GoogleWorkspaceClient(settings)
-    return GoogleConnector(client=client, mode=settings.google_mode, frontend_url=settings.frontend_url)
+    from app.db.credentials import build_credential_store
+    from app.db.session import new_session
+
+    store = build_credential_store(settings.token_encryption_key, new_session)
+    return GoogleConnector(client=client, mode=settings.google_mode, frontend_url=settings.frontend_url, store=store)
 
 
 def get_google_connector() -> GoogleConnector:

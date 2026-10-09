@@ -20,7 +20,7 @@ from app.connectors.google.client import TRANSCRIPT_READY, GoogleWorkspaceClient
 from app.core.config import Settings
 
 
-SAMPLE_CODE, STANDUP_CODE = "abc-mnop-xyz", "qrs-tuvw-xyz"
+SAMPLE_CODE, STANDUP_CODE, UPCOMING_CODE = "abc-mnop-xyz", "qrs-tuvw-xyz", "jkl-wxyz-abc"
 RECORD, STANDUP_RECORD = "conferenceRecords/mock-review", "conferenceRecords/mock-standup"
 TRANSCRIPT = f"{RECORD}/transcripts/mock-transcript"
 MOCK_ACCOUNT_ID = "100000000000000000001"
@@ -97,6 +97,7 @@ class _FakeGoogle:
             return {"conferenceId": code, "conferenceSolution": {"key": {"type": "hangoutsMeet"}}}
 
         start = self.review_start
+        upcoming = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) + timedelta(hours=2)
         return [
             {
                 "id": "mock-review", "status": "confirmed", "summary": "Enterprise Revenue Review",
@@ -112,6 +113,12 @@ class _FakeGoogle:
                 "id": "mock-standup", "status": "confirmed", "summary": "Product standup",
                 "start": {"dateTime": _iso(start + timedelta(hours=5))}, "end": {"dateTime": _iso(start + timedelta(hours=5, minutes=15))},
                 "hangoutLink": f"https://meet.google.com/{STANDUP_CODE}", "conferenceData": meet(STANDUP_CODE),
+            },
+            {
+                # Starts at the top of the hour after next, so calendar auto-join can schedule a bot for it.
+                "id": "mock-weekly-sync", "status": "confirmed", "summary": "Weekly sync",
+                "start": {"dateTime": _iso(upcoming)}, "end": {"dateTime": _iso(upcoming + timedelta(minutes=30))},
+                "hangoutLink": f"https://meet.google.com/{UPCOMING_CODE}", "conferenceData": meet(UPCOMING_CODE),
             },
         ]
 
@@ -136,7 +143,14 @@ class _FakeGoogle:
         if path == "/v1/userinfo":
             return httpx.Response(200, json={"sub": MOCK_ACCOUNT_ID, "email": "demo.user@example.com", "name": "Demo User (mock Google)"})
         if path.endswith("/calendars/primary/events"):
-            return httpx.Response(200, json={"items": self.events()})
+            # Like Calendar v3: events overlapping [timeMin, timeMax).
+            window = [datetime.fromisoformat(params[key].replace("Z", "+00:00")) for key in ("timeMin", "timeMax")]
+            items = [
+                e for e in self.events()
+                if datetime.fromisoformat(e["end"]["dateTime"].replace("Z", "+00:00")) > window[0]
+                and datetime.fromisoformat(e["start"]["dateTime"].replace("Z", "+00:00")) < window[1]
+            ]
+            return httpx.Response(200, json={"items": items})
         if path == "/v2/conferenceRecords":
             code = re.search(r'space\.meeting_code = "([a-z-]+)"', params.get("filter", ""))
             records = {

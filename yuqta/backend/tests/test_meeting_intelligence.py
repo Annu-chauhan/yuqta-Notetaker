@@ -99,3 +99,22 @@ def test_long_lines_are_quoted_by_the_relevant_sentence() -> None:
     assert meeting.action_items[0].evidence.quote == "I will prepare the marketing budget by next Monday."
     assert meeting.risks[0].evidence.quote == "The payment integration is getting delayed by the gateway team."
     assert meeting.risks[0].evidence.quote in monologue.text  # always verbatim from the transcript
+
+
+def test_long_hindi_lines_split_on_danda() -> None:
+    # Hindi/English speech comes back in mixed script; Hindi sentences end with । (danda).
+    monologue = SegmentIn(
+        speaker="Parul",
+        text="सबको नमस्ते, आज के agenda पर बात करते हैं और सबसे पहले app के beta version का status देखते हैं। "
+        "payment gateway वाली team की वजह से integration में देरी हो रही है और यह हमारे लिए बड़ा risk है। "
+        "मैं अगले सोमवार तक marketing budget तैयार कर दूँगी। ठीक है, सबका धन्यवाद, अगले हफ़्ते फिर मिलते हैं "
+        "और गुरुवार को review करेंगे।",
+    )
+    extracted = ExtractedMeeting(
+        summary="s", meeting_type="product", topics=[], decisions=[],
+        action_items=[ExtractedAction(task="Prepare the marketing budget", owner=None, due="next monday", segment_index=0)],
+        risks=[ExtractedPoint(text="Payment gateway integration delayed", segment_index=0)], open_questions=[],
+    )
+    meeting = validated_meeting(extracted, [monologue])
+    assert meeting.action_items[0].evidence.quote == "मैं अगले सोमवार तक marketing budget तैयार कर दूँगी।"
+    assert meeting.risks[0].evidence.quote.startswith("payment gateway वाली team")

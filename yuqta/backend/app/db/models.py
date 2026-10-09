@@ -154,7 +154,7 @@ class MeetingBot(Base):
     __tablename__ = "meeting_bots"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('joining', 'waiting', 'in_call', 'recording', 'processing', 'transcribed', 'analyzed', 'failed')",
+            "status IN ('scheduled', 'joining', 'waiting', 'in_call', 'recording', 'processing', 'transcribed', 'analyzed', 'failed', 'cancelled')",
             name="status",
         ),
         UniqueConstraint("provider", "external_id", name="uq_meeting_bots_provider_external_id"),
@@ -167,10 +167,23 @@ class MeetingBot(Base):
     title: Mapped[str] = mapped_column(String(300))
     status: Mapped[str] = mapped_column(String(20), default="joining")
     provider_status: Mapped[str | None] = mapped_column(String(60))  # raw provider status code, for debugging
+    # Set for bots scheduled ahead of time: when the bot joins, and the calendar event that caused it.
+    join_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    calendar_event_id: Mapped[str | None] = mapped_column(String(300), index=True)
     detail: Mapped[str] = mapped_column(Text, default="")
     # The meeting created from the bot's transcript; kept (set NULL) if that meeting is deleted.
     meeting_id: Mapped[UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ConnectorCredential(Base):
+    """Encrypted credentials of a connector (app/db/credentials.py), e.g. the Google OAuth tokens."""
+
+    __tablename__ = "connector_credentials"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)  # e.g. google:live
+    ciphertext: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

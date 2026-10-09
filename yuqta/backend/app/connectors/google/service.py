@@ -1,7 +1,8 @@
 """The workspace's Google connection: OAuth state, tokens and the Calendar/Meet calls Yuqta needs.
 
 One connection per backend process (a POC connector, like an admin connecting a data source).
-Tokens live in memory only, so they are never written to disk and are lost on restart.
+With TOKEN_ENCRYPTION_KEY set, the tokens are also stored encrypted (app/db/credentials.py) and restored on
+startup, so the connection survives restarts; without it they live in memory only.
 """
 
 from base64 import b64decode
@@ -12,6 +13,7 @@ import logging
 import secrets
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from app.connectors.google.client import (
     PUBSUB_SCOPE,
@@ -26,6 +28,10 @@ from app.connectors.google.client import (
     simplify_event,
 )
 from app.schemas.transcript import SegmentIn
+
+
+if TYPE_CHECKING:
+    from app.db.credentials import CredentialStore
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +68,26 @@ class GoogleConnector:
     _events_subscription: dict | None = None  # {"name": ..., "expireTime": ...}
     events_error: str | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    store: "CredentialStore | None" = None  # encrypted persistence; None = memory only
+
+    def __post_init__(self) -> None:
+        saved = self.store.load(self._store_key) if self.store else None
+        if saved and saved.get("tokens", {}).get("access_token"):
+            self._connection = _Connection(tokens=saved["tokens"], account=saved.get("account") or {}, account_id=saved.get("account_id"))
+            logger.info("Google connection restored for %s", (saved.get("account") or {}).get("email"))
+
+    @property
+    def _store_key(self) -> str:
+        return f"google:{self.mode}"  # mock tokens never leak into live mode
+
+    def _persist(self) -> None:
+        if self.store is None:
+            return
+        connection = self._connection
+        self.store.save(
+            self._store_key,
+            None if connection is None else {"tokens": connection.tokens, "account": connection.account, "account_id": connection.account_id},
+        )
 
     # --- connection lifecycle ----------------------------------------------------------------
 
@@ -111,6 +137,7 @@ class GoogleConnector:
                 account={"email": profile.get("email"), "name": profile.get("name")},
                 account_id=profile.get("sub"),
             )
+        self._persist()
         logger.info("Google connected (%s mode) as %s", self.mode, profile.get("email"))
         if self.client.settings.auto_import_configured:
             self.ensure_events_subscription()  # best effort; problems are shown in auto_import_status()
@@ -120,6 +147,7 @@ class GoogleConnector:
         with self._lock:
             connection, self._connection = self._connection, None
             self._events_subscription = None
+        self._persist()
         if connection:
             self.client.revoke(connection.tokens.get("refresh_token") or connection.tokens["access_token"])
 
@@ -142,8 +170,10 @@ class GoogleConnector:
             except GoogleAPIError as exc:
                 with self._lock:
                     self._connection = None
+                self._persist()
                 raise ConnectorError("Google session expired. Connect again.", 409) from exc
             tokens.update({k: v for k, v in refreshed.items() if k != "refresh_token"})
+            self._persist()
         return tokens["access_token"]
 
     def _require_scope(self, scope: str, label: str) -> None:

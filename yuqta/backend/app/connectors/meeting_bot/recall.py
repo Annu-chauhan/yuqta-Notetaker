@@ -8,6 +8,7 @@ by Deepgram nova-3 through Recall.ai (`deepgram_streaming`); either way the fini
 JSON file behind a pre-signed URL in recordings[].media_shortcuts.transcript.data.download_url.
 """
 
+from datetime import datetime, timezone
 import logging
 
 import httpx
@@ -45,19 +46,22 @@ class RecallMeetingBotClient:
         # Pre-signed storage URLs reject an extra Authorization header, so downloads use a plain client.
         self._download = httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0), transport=transport)
 
-    def create_bot(self, meeting_url: str, bot_name: str) -> str:
+    def create_bot(self, meeting_url: str, bot_name: str, join_at: datetime | None = None) -> str:
         body = {
             "meeting_url": meeting_url,
             "bot_name": bot_name,
             "recording_config": {"transcript": {"provider": self._transcript_provider()}},
             "metadata": {"source": "yuqta"},
         }
+        if join_at is not None:
+            # More than 10 minutes ahead makes this a scheduled bot, which Recall.ai guarantees joins on time.
+            body["join_at"] = join_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         try:
             data = self._request("POST", "/bot/", json=body)
         except BotError as error:
             if self.transcription in _SETUP_HINTS and error.status_code == 400:
                 raise BotError(
-                    f"{error} If {_SETUP_HINTS[self.transcription]} is not set up yet, or set BOT_TRANSCRIPTION=recallai.",
+                    f"{error} {_SETUP_HINTS[self.transcription]}, or set BOT_TRANSCRIPTION=recallai.",
                     status_code=400,
                     permanent=True,
                 ) from error
@@ -86,6 +90,9 @@ class RecallMeetingBotClient:
 
     def get_bot(self, bot_id: str) -> BotState:
         return bot_state(self._request("GET", f"/bot/{bot_id}/"))
+
+    def delete_scheduled_bot(self, bot_id: str) -> None:
+        self._request("DELETE", f"/bot/{bot_id}/")
 
     def leave_call(self, bot_id: str) -> None:
         self._request("POST", f"/bot/{bot_id}/leave_call/")
@@ -132,8 +139,8 @@ class RecallMeetingBotClient:
 
 
 _SETUP_HINTS = {
-    "deepgram": "Deepgram: add your Deepgram API key and project id in the Recall.ai dashboard",
-    "aws": "AWS Transcribe: add your AWS access key in the Recall.ai dashboard (Transcription → AWS Transcribe)",
+    "deepgram": "To use Deepgram, add your Deepgram API key and project id in the Recall.ai dashboard",
+    "aws": "To use AWS Transcribe, add your AWS access key in the Recall.ai dashboard (Transcription → AWS Transcribe)",
 }
 
 

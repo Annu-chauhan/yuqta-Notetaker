@@ -97,6 +97,8 @@ def simplify_event(event: dict) -> dict:
         "meet_link": event.get("hangoutLink"),
         "html_link": event.get("htmlLink"),
         "attendees": attendees,
+        # The signed-in user declined the invitation.
+        "declined": any(a.get("self") and a.get("responseStatus") == "declined" for a in event.get("attendees", [])),
     }
 
 

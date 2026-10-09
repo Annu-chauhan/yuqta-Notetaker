@@ -12,6 +12,7 @@ from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
 from app.api.google import router as google_router
 from app.api.health import router as health_router
+from app.api.history import router as history_router
 from app.api.meetings import router as meetings_router
 from app.api.system import router as system_router
 from app.connectors.meeting_bot import BotError
@@ -69,6 +70,32 @@ def _start_meeting_bots():
     return worker
 
 
+def _start_calendar_auto_join():
+    """Background sync of calendar events to scheduled bots (AUTO_JOIN_CALENDAR=true; not in tests)."""
+    from app.connectors.google import get_google_connector
+    from app.connectors.meeting_bot import BotError, get_meeting_bot_client
+    from app.db.session import new_session
+    from app.workflows.auto_import import AutoImportWorker
+    from app.workflows.calendar_auto_join import calendar_auto_joiner
+
+    if settings.app_env == "test" or not settings.auto_join_calendar:
+        return None
+    try:
+        client = get_meeting_bot_client()
+    except BotError as error:
+        logger.warning("Calendar auto-join disabled: %s", error)
+        return None
+    connector = get_google_connector()
+    worker = AutoImportWorker(
+        None,
+        settings.auto_join_poll_seconds,
+        lambda: calendar_auto_joiner.run_once(connector, client, new_session, settings.bot_name, settings.auto_join_hours_ahead),
+        name="calendar-auto-join",
+    )
+    worker.start()
+    return worker
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info(
@@ -82,7 +109,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     if not settings.api_auth_token and settings.app_env == "production":
         logger.warning("API_AUTH_TOKEN is not set: the API is unauthenticated")
-    workers = [w for w in (_start_auto_import(), _start_meeting_bots()) if w]
+    workers = [w for w in (_start_auto_import(), _start_meeting_bots(), _start_calendar_auto_join()) if w]
     yield
     for worker in workers:
         worker.stop()
@@ -102,6 +129,7 @@ app.include_router(customers_router)
 app.include_router(bots_router)
 app.include_router(meetings_router)
 app.include_router(dashboard_router)
+app.include_router(history_router)
 app.include_router(google_router)
 app.include_router(system_router)
 

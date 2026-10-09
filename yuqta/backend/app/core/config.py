@@ -89,7 +89,10 @@ class Settings(BaseSettings):
     minutes_to: str = ""  # always receive the minutes, e.g. the team list (comma-separated)
     internal_domains: str = ""
     # Who gets the recording with the summary when a meeting has no calendar organizer (bots sent by hand).
-    meeting_admin_email: str = ""  # e.g. iqlytics.in; addresses elsewhere count as external  # local hour (DISPLAY_TIMEZONE) after which the day's reminder is sent
+    meeting_admin_email: str = ""
+    # Send email through the connected Google account (Gmail API, "send email" permission) when SMTP is
+    # not set up: no app password needed. Asked for when connecting Google.
+    gmail_send: bool = True  # e.g. iqlytics.in; addresses elsewhere count as external  # local hour (DISPLAY_TIMEZONE) after which the day's reminder is sent
     # Calendar auto-join: send the bot to every Google Meet on the connected Google Calendar.
     auto_join_calendar: bool = False
     auto_join_hours_ahead: int = 24

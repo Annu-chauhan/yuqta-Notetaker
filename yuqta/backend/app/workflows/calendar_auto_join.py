@@ -127,7 +127,8 @@ class CalendarAutoJoiner:
                     db, client, url, title, bot_name, join_at=join_at, calendar_event_id=event_id,
                     attendee_emails=event.get("attendee_emails") or [],
                     # The organizer is the meeting's admin; else the account whose calendar it is on.
-                    admin_email=event.get("organizer_email") or event.get("account"),
+                    admin_email=event.get("organizer_email"),
+                    account_email=event.get("account"),  # the registered account: always gets the recording
                 )
             except BotError as error:
                 logger.warning("Calendar auto-join could not schedule %s: %s", event_id, error)

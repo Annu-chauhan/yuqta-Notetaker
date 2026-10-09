@@ -1,4 +1,5 @@
-"""Sends email through the configured SMTP server (task reminders, meeting minutes)."""
+"""Sends email (task reminders, meeting minutes): through SMTP when it is set up, otherwise through the
+connected Google account's Gmail (GMAIL_SEND), which needs no app password."""
 
 from email.message import EmailMessage
 import logging
@@ -19,8 +20,35 @@ class MailError(Exception):
         self.status_code = status_code
 
 
-def mail_configured(settings: Settings) -> bool:
+def smtp_configured(settings: Settings) -> bool:
     return bool(settings.smtp_host and settings.smtp_from)
+
+
+def _gmail(settings: Settings):
+    """The Google connector when it can send mail, else None."""
+    if not settings.gmail_send:
+        return None
+    try:
+        from app.connectors.google import get_google_connector
+
+        connector = get_google_connector()
+        return connector if connector.mail_sender() else None
+    except Exception:  # noqa: BLE001 - no Google connection means no Gmail sending
+        return None
+
+
+def mail_configured(settings: Settings) -> bool:
+    return smtp_configured(settings) or _gmail(settings) is not None
+
+
+def registered_emails(settings: Settings) -> list[str]:
+    """The connected (registered) Google accounts, primary first; [] when none."""
+    try:
+        from app.connectors.google import get_google_connector
+
+        return parse_addresses(get_google_connector().registered_emails())
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def parse_addresses(value: str | list[str]) -> list[str]:
@@ -34,11 +62,24 @@ def parse_addresses(value: str | list[str]) -> list[str]:
     return list(seen)
 
 
+NOT_SET_UP = "Email is not set up. Connect Google on the Import page (allow sending email), or set SMTP_HOST and SMTP_FROM."
+
+
 def send_email(settings: Settings, to: list[str], subject: str, text: str, html: str) -> None:
-    if not mail_configured(settings):
-        raise MailError("Email is not set up. Set SMTP_HOST and SMTP_FROM (see .env.example).", 409)
     if not to:
         raise MailError("No recipients.", 422)
+    if not smtp_configured(settings):
+        gmail = _gmail(settings)
+        if gmail is None:
+            raise MailError(NOT_SET_UP, 409)
+        from app.connectors.google import ConnectorError
+
+        try:
+            sender = gmail.send_mail(to, subject, text, html)
+        except ConnectorError as error:
+            raise MailError(f"Gmail could not send the email: {error}") from error
+        logger.info("Email sent through Gmail (%s) to %d recipient(s): %s", sender, len(to), subject)
+        return
     message = EmailMessage()
     message["Subject"], message["From"], message["To"] = subject, settings.smtp_from, ", ".join(to)
     message.set_content(text)

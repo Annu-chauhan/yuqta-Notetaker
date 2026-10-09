@@ -61,7 +61,9 @@ export function MinutesPanel({
 
       {!minutes.mail_configured ? (
         <p className="mt-3 text-sm text-amber-800 dark:text-amber-300">
-          Email is not set up yet: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and SMTP_FROM in .env (see .env.example).
+          Email is not set up yet:{" "}
+          <a href="/import" className="underline underline-offset-2">connect Google</a> and allow Yuqta to send
+          email (no password needed), or set the SMTP settings in .env.
         </p>
       ) : (
         <form action={action} className="mt-3 space-y-2">

@@ -99,13 +99,13 @@ def _start_calendar_auto_join():
 
 
 def _start_reminders():
-    """Checks every 10 minutes whether today's task reminder is due (needs SMTP settings; not in tests)."""
+    """Checks every 10 minutes whether today's task reminder is due (sends once email is set up; not in tests)."""
     from app.db.session import new_session
     from app.workflows.auto_import import AutoImportWorker
-    from app.workflows.reminders import configured, reminder_scheduler
+    from app.workflows.reminders import reminder_scheduler
 
-    if settings.app_env == "test" or not configured(settings):
-        return None
+    if settings.app_env == "test":
+        return None  # runs even before email is set up: Google may be connected later
     worker = AutoImportWorker(None, 600, lambda: reminder_scheduler.run_once(get_settings(), new_session), name="task-reminders")
     worker.start()
     return worker

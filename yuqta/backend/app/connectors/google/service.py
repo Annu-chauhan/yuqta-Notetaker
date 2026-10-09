@@ -17,6 +17,7 @@ import time
 from typing import TYPE_CHECKING
 
 from app.connectors.google.client import (
+    GMAIL_SEND_SCOPE,
     PUBSUB_SCOPE,
     REQUIRED_SCOPES,
     TRANSCRIPT_READY,
@@ -224,6 +225,37 @@ class GoogleConnector:
             tokens.update({k: v for k, v in refreshed.items() if k != "refresh_token"})
             self._persist()
         return tokens["access_token"]
+
+    # --- email through the connected account ---------------------------------------------------
+
+    def registered_emails(self) -> list[str]:
+        """Connected Google accounts, the primary first."""
+        return [a["email"] for a in self.accounts() if a.get("email")]
+
+    def mail_sender(self, account: str | None = None) -> str | None:
+        """The address email can be sent from (the account, or the primary one), if it allowed sending."""
+        try:
+            connection = self._find(account)
+        except ConnectorError:
+            return None
+        granted = set((connection.tokens.get("scope") or "").split())
+        return connection.account.get("email") if GMAIL_SEND_SCOPE in granted else None
+
+    def send_mail(self, to: list[str], subject: str, text: str, html: str, account: str | None = None) -> str:
+        """Sends from the connected Gmail account. Returns the sender address."""
+        from base64 import urlsafe_b64encode
+        from email.message import EmailMessage
+
+        sender = self.mail_sender(account)
+        if sender is None:
+            raise ConnectorError("Sending email was not allowed. Disconnect Google and connect again to allow it.", 403)
+        message = EmailMessage()
+        message["Subject"], message["From"], message["To"] = subject, f"Yuqta <{sender}>", ", ".join(to)
+        message.set_content(text)
+        message.add_alternative(html, subtype="html")
+        raw = urlsafe_b64encode(message.as_bytes()).decode()
+        self._call(self.client.send_gmail, self._access_token(account), raw)
+        return sender
 
     def _require_scope(self, scope: str, label: str, account: str | None = None) -> None:
         connection = self._find(account) if self._connections else None

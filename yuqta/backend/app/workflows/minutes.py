@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, local_time
-from app.core.mailer import MailError, mail_configured, parse_addresses, send_email
+from app.core.mailer import NOT_SET_UP, MailError, mail_configured, parse_addresses, registered_emails, send_email
 from app.db.models import ActionItem, Meeting, MeetingBot, MinutesEmail
 from app.workflows.analyze_meeting import load_analysis
 
@@ -51,18 +51,35 @@ def _bot(db: Session, meeting_id: UUID) -> MeetingBot | None:
     return db.scalars(select(MeetingBot).where(MeetingBot.meeting_id == meeting_id).order_by(MeetingBot.created_at.desc())).first()
 
 
-def admin_for(db: Session, settings: Settings, meeting_id: UUID) -> str | None:
+def admin_recipients(db: Session, settings: Settings, meeting_id: UUID) -> list[str]:
+    """Who gets the recording with the summary.
+
+    The registered Google account (the one whose calendar had the meeting, else the primary one) always does;
+    the organizer or the admin typed when sending the bot also does when inside the organisation (an outside
+    organizer is left out: the recording is not sent outside automatically). MEETING_ADMIN_EMAIL is the fallback.
+    """
     bot = _bot(db, meeting_id)
-    found = parse_addresses([bot.admin_email] if bot and bot.admin_email else settings.meeting_admin_email)
-    return found[0] if found else None
+    registered = registered_emails(settings)
+    account = parse_addresses([bot.account_email]) if bot and bot.account_email else []
+    admins = account or registered[:1]
+    named = parse_addresses([bot.admin_email]) if bot and bot.admin_email else []
+    admins += [a for a in named if a in registered or not external_recipients(settings, [a])]
+    if not admins:
+        admins = parse_addresses(settings.meeting_admin_email) or named
+    return parse_addresses(admins)
+
+
+def admin_for(db: Session, settings: Settings, meeting_id: UUID) -> str | None:
+    """The admins as one comma-separated string, for display."""
+    return ", ".join(admin_recipients(db, settings, meeting_id)) or None
 
 
 def suggested_recipients(db: Session, settings: Settings, meeting_id: UUID) -> list[str]:
     """The attendees' minutes (the admin gets a separate copy, so is not listed here)."""
     bot = _bot(db, meeting_id)
     attendees = parse_addresses(bot.attendee_emails or []) if bot else []
-    admin = admin_for(db, settings, meeting_id)
-    return [a for a in parse_addresses(attendees + parse_addresses(settings.minutes_to)) if a != admin]
+    admins = set(admin_recipients(db, settings, meeting_id))
+    return [a for a in parse_addresses(attendees + parse_addresses(settings.minutes_to)) if a not in admins]
 
 
 def external_recipients(settings: Settings, recipients: list[str]) -> list[str]:
@@ -170,12 +187,12 @@ def _recording_url(get: RecordingUrl | None) -> str | None:
         return None
 
 
-def _send_admin(db: Session, settings: Settings, meeting: Meeting, admin: str, recording_url: RecordingUrl | None) -> None:
+def _send_admin(db: Session, settings: Settings, meeting: Meeting, admins: list[str], recording_url: RecordingUrl | None) -> None:
     row = db.get(MinutesEmail, meeting.id) or MinutesEmail(meeting_id=meeting.id, status="skipped", recipients=[], subject="", detail="")
     minutes = build_minutes(db, settings, meeting, recording=_recording_url(recording_url))
-    row.admin_email = admin
+    row.admin_email = ", ".join(admins)[:1000]
     try:
-        send_email(settings, [admin], minutes.subject, minutes.text, minutes.html)
+        send_email(settings, admins, minutes.subject, minutes.text, minutes.html)
         row.admin_sent_at = datetime.now(timezone.utc)
         row.admin_detail = "Sent with the recording link." if "Watch the recording" in minutes.html else "Sent; the recording was still processing."
     except MailError as error:
@@ -193,15 +210,15 @@ def after_analysis(db: Session, settings: Settings, meeting_id: UUID, recording_
     if meeting is None:
         return None
     existing = db.get(MinutesEmail, meeting_id)
-    admin = admin_for(db, settings, meeting_id)
-    if admin and (existing is None or existing.admin_sent_at is None):
-        _send_admin(db, settings, meeting, admin, recording_url)
+    admins = admin_recipients(db, settings, meeting_id)
+    if admins and (existing is None or existing.admin_sent_at is None):
+        _send_admin(db, settings, meeting, admins, recording_url)
         existing = db.get(MinutesEmail, meeting_id)
     if existing is not None and existing.status in ("sent", "awaiting_approval"):
         return existing  # already handled; re-analysis never sends again
     recipients = suggested_recipients(db, settings, meeting_id)
     if not recipients:
-        detail = "Only the admin gets this meeting's email (no other attendees and MINUTES_TO is empty)." if admin else (
+        detail = "Only the admin gets this meeting's email (no other attendees and MINUTES_TO is empty)." if admins else (
             "No recipients: the meeting had no calendar attendees, no admin, and MINUTES_TO is empty."
         )
         return _record(db, meeting_id, "skipped", [], "", detail)
@@ -231,15 +248,15 @@ def send_minutes(
     if meeting is None:
         raise MinutesError("Meeting not found", 404)
     if not mail_configured(settings):  # nothing was attempted, so nothing is recorded as failed
-        raise MinutesError("Email is not set up. Set SMTP_HOST and SMTP_FROM (see .env.example).", 409)
+        raise MinutesError(NOT_SET_UP, 409)
     to = parse_addresses(recipients)
     if not to:
         raise MinutesError("Add at least one valid email address.", 422)
     minutes = build_minutes(db, settings, meeting)
-    admin = admin_for(db, settings, meeting_id)
-    others = [a for a in to if a != admin]
-    if admin in to:
-        _send_admin(db, settings, meeting, admin, recording_url)
+    admins = [a for a in admin_recipients(db, settings, meeting_id) if a in to]
+    others = [a for a in to if a not in admins]
+    if admins:
+        _send_admin(db, settings, meeting, admins, recording_url)
         row = db.get(MinutesEmail, meeting_id)
         if row.admin_sent_at is None:
             raise MinutesError(row.admin_detail or "Could not send the admin's copy.", 502)

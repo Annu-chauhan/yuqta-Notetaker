@@ -71,6 +71,7 @@ def send_bot(
     calendar_event_id: str | None = None,
     attendee_emails: list[str] | None = None,
     admin_email: str | None = None,
+    account_email: str | None = None,
 ) -> MeetingBot:
     """Sends the bot now, or schedules it for join_at (a time in the future)."""
     scheduled = join_at is not None and join_at > datetime.now(timezone.utc)
@@ -87,6 +88,7 @@ def send_bot(
         calendar_event_id=calendar_event_id,
         attendee_emails=attendee_emails or None,
         admin_email=(admin_email or "").strip().lower() or None,
+        account_email=(account_email or "").strip().lower() or None,
     )
     db.add(bot)
     db.commit()

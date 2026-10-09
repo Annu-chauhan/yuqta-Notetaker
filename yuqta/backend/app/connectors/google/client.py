@@ -37,6 +37,8 @@ GOOGLE_SCOPES = (
 )
 REQUIRED_SCOPES = GOOGLE_SCOPES[3:]
 PUBSUB_SCOPE = "https://www.googleapis.com/auth/pubsub"  # only requested when auto-import is configured
+GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"  # send only: cannot read the mailbox
+GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
 EVENTS_API = "https://workspaceevents.googleapis.com/v1"
 PUBSUB_API = "https://pubsub.googleapis.com/v1"
@@ -125,7 +127,11 @@ class GoogleWorkspaceClient:
     # OAuth -----------------------------------------------------------------
 
     def scopes(self) -> tuple[str, ...]:
-        return GOOGLE_SCOPES + ((PUBSUB_SCOPE,) if self.settings.auto_import_configured else ())
+        return (
+            GOOGLE_SCOPES
+            + ((GMAIL_SEND_SCOPE,) if self.settings.gmail_send else ())
+            + ((PUBSUB_SCOPE,) if self.settings.auto_import_configured else ())
+        )
 
     def authorization_url(self, state: str, code_challenge: str) -> str:
         params = {
@@ -164,6 +170,13 @@ class GoogleWorkspaceClient:
                 "grant_type": "refresh_token",
             }
         )
+
+    def send_gmail(self, access_token: str, raw_message: str) -> dict:
+        """Sends a base64url-encoded MIME message from the signed-in account."""
+        response = self._send(
+            "POST", GMAIL_SEND_URL, json={"raw": raw_message}, headers={"Authorization": f"Bearer {access_token}"}
+        )
+        return response.json()
 
     def revoke(self, token: str) -> None:
         try:

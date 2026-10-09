@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.mailer import MailError, send_email
+from app.core.mailer import MailError, mail_configured, parse_addresses, registered_emails, send_email
 from app.db.models import ActionItem, Meeting, ReminderLog
 from app.workflows.action_items import today
 
@@ -95,16 +95,18 @@ def build_digest(db: Session, frontend_url: str, on: date | None = None) -> Dige
 
 
 def _recipients(settings: Settings) -> list[str]:
-    return [a.strip() for a in settings.reminder_to.split(",") if a.strip()]
+    # REMINDER_TO, or else the registered (connected) Google account.
+    return parse_addresses(settings.reminder_to) or registered_emails(settings)[:1]
 
 
 def configured(settings: Settings) -> bool:
-    return bool(settings.smtp_host and settings.smtp_from and _recipients(settings))
+    return bool(mail_configured(settings) and _recipients(settings))
 
 
 def send(settings: Settings, digest: Digest) -> list[str]:
     if not configured(settings):
-        raise ReminderError("Reminders are not set up. Set SMTP_HOST, SMTP_FROM and REMINDER_TO (see .env.example).", 409)
+        raise ReminderError("Reminders are not set up. Connect Google on the Import page (allow sending email), "
+                            "or set SMTP_HOST, SMTP_FROM and REMINDER_TO (see .env.example).", 409)
     recipients = _recipients(settings)
     try:
         send_email(settings, recipients, digest.subject, digest.text, digest.html)

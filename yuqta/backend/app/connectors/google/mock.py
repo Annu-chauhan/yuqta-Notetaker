@@ -46,6 +46,7 @@ class _FakeGoogle:
         self._queue_lock = threading.Lock()
         self._ids = itertools.count(1)
         self._subscriptions: dict[str, dict] = {}
+        self.sent_mail: list[str] = []  # raw messages sent through the Gmail API
 
     def simulate_transcript_ready(self) -> str:
         """A meeting just ended and Google generated its transcript: publish the event."""
@@ -131,11 +132,14 @@ class _FakeGoogle:
                     return httpx.Response(400, json={"error": "invalid_grant", "error_description": "Bad authorization code."})
                 body = {"access_token": "mock-access", "expires_in": 3599, "scope": "openid email profile "
                         "https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/meetings.space.readonly "
-                        "https://www.googleapis.com/auth/pubsub"}
+                        "https://www.googleapis.com/auth/pubsub https://www.googleapis.com/auth/gmail.send"}
                 if form.get("grant_type") == ["authorization_code"]:
                     body["refresh_token"] = "mock-refresh"
                 return httpx.Response(200, json=body)
             return httpx.Response(200)  # /revoke
+        if request.url.host == "gmail.googleapis.com" and path.endswith("/messages/send"):
+            self.sent_mail.append(json.loads(request.content)["raw"])
+            return httpx.Response(200, json={"id": f"mock-message-{len(self.sent_mail)}"})
         if request.url.host == "pubsub.googleapis.com":
             return self._pubsub(path, json.loads(request.content or b"{}"))
         if request.url.host == "workspaceevents.googleapis.com":

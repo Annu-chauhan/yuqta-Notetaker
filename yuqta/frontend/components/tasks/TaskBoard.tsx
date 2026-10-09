@@ -54,7 +54,7 @@ function ReminderBox({ reminders }: { reminders: ReminderStatus | null }) {
       <p className="mt-1 text-muted">
         {reminders.configured
           ? `Every day after ${String(reminders.hour).padStart(2, "0")}:00 (${reminders.timezone}) to ${reminders.recipients.join(", ")}: overdue tasks and tasks due in the next 3 days.`
-          : "Set SMTP_HOST, SMTP_FROM and REMINDER_TO in .env (see .env.example) to email overdue and due-soon tasks every morning."}
+          : "Connect Google on the Import page and allow sending email (or set SMTP in .env) to get overdue and due-soon tasks by email every morning."}
         {reminders.last_sent && ` Last sent ${formatDay(reminders.last_sent.day)}.`}
       </p>
       <p className="mt-1 text-xs text-muted">

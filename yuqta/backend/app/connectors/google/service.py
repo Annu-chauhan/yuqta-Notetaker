@@ -1,8 +1,9 @@
 """The workspace's Google connection: OAuth state, tokens and the Calendar/Meet calls Yuqta needs.
 
-One connection per backend process (a POC connector, like an admin connecting a data source).
+Several Google accounts can be connected (one per person); calendar auto-join reads all of their calendars.
+The first connected account is the primary one, used by the Import page and Meet transcript auto-import.
 With TOKEN_ENCRYPTION_KEY set, the tokens are also stored encrypted (app/db/credentials.py) and restored on
-startup, so the connection survives restarts; without it they live in memory only.
+startup, so connections survive restarts; without it they live in memory only.
 """
 
 from base64 import b64decode
@@ -64,7 +65,7 @@ class GoogleConnector:
     mode: str
     frontend_url: str
     _pending: dict[str, tuple[str, str, float]] = field(default_factory=dict)  # state -> (verifier, return_to, expiry)
-    _connection: _Connection | None = None
+    _connections: dict[str, _Connection] = field(default_factory=dict)  # account key -> connection; first = primary
     _events_subscription: dict | None = None  # {"name": ..., "expireTime": ...}
     events_error: str | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -72,9 +73,47 @@ class GoogleConnector:
 
     def __post_init__(self) -> None:
         saved = self.store.load(self._store_key) if self.store else None
-        if saved and saved.get("tokens", {}).get("access_token"):
-            self._connection = _Connection(tokens=saved["tokens"], account=saved.get("account") or {}, account_id=saved.get("account_id"))
-            logger.info("Google connection restored for %s", (saved.get("account") or {}).get("email"))
+        if not saved:
+            return
+        entries = saved.get("accounts") if "accounts" in saved else [saved]  # older format held one account
+        for entry in entries or []:
+            if (entry.get("tokens") or {}).get("access_token"):
+                connection = _Connection(tokens=entry["tokens"], account=entry.get("account") or {}, account_id=entry.get("account_id"))
+                self._connections[self._key(connection)] = connection
+                logger.info("Google connection restored for %s", connection.account.get("email"))
+
+    @staticmethod
+    def _key(connection: _Connection) -> str:
+        return connection.account_id or (connection.account.get("email") or "").lower() or "default"
+
+    @property
+    def _connection(self) -> _Connection | None:
+        """The primary (first connected) account."""
+        return next(iter(self._connections.values()), None)
+
+    def accounts(self) -> list[dict]:
+        """Connected accounts in connection order: [{"email", "name", "missing_scopes"}]."""
+        return [
+            {**connection.account, "missing_scopes": self._missing_scopes(connection)}
+            for connection in self._connections.values()
+        ]
+
+    @staticmethod
+    def _missing_scopes(connection: _Connection) -> list[str]:
+        granted = set((connection.tokens.get("scope") or "").split())
+        return [s for s in REQUIRED_SCOPES if s not in granted]
+
+    def _find(self, account: str | None) -> _Connection:
+        """The connection for an account email (case-insensitive), or the primary one."""
+        if account is None:
+            connection = self._connection
+        else:
+            connection = next(
+                (c for c in self._connections.values() if (c.account.get("email") or "").lower() == account.lower()), None
+            )
+        if connection is None:
+            raise ConnectorError("Google is not connected." if account is None else f"{account} is not connected.", 409)
+        return connection
 
     @property
     def _store_key(self) -> str:
@@ -83,22 +122,22 @@ class GoogleConnector:
     def _persist(self) -> None:
         if self.store is None:
             return
-        connection = self._connection
-        self.store.save(
-            self._store_key,
-            None if connection is None else {"tokens": connection.tokens, "account": connection.account, "account_id": connection.account_id},
-        )
+        accounts = [
+            {"tokens": c.tokens, "account": c.account, "account_id": c.account_id} for c in self._connections.values()
+        ]
+        self.store.save(self._store_key, {"accounts": accounts} if accounts else None)
 
     # --- connection lifecycle ----------------------------------------------------------------
 
     def status(self) -> dict:
-        granted = set((self._connection.tokens.get("scope") or "").split()) if self._connection else set()
+        primary = self._connection
         return {
             "mode": self.mode,
             "configured": self.client.settings.google_configured or self.mode == "mock",
-            "connected": self._connection is not None,
-            "account": self._connection.account if self._connection else None,
-            "missing_scopes": [s for s in REQUIRED_SCOPES if s not in granted] if self._connection else [],
+            "connected": primary is not None,
+            "account": primary.account if primary else None,  # the primary account
+            "missing_scopes": self._missing_scopes(primary) if primary else [],
+            "accounts": self.accounts(),
         }
 
     def start_connect(self, return_path: str = "/import") -> str:
@@ -129,26 +168,37 @@ class GoogleConnector:
         except GoogleAPIError as exc:
             logger.warning("Google token exchange failed: %s", exc.message)
             return self._back(return_path, google_error="token_exchange_failed")
+        connection = _Connection(
+            tokens=tokens,
+            account={"email": profile.get("email"), "name": profile.get("name")},
+            account_id=profile.get("sub"),
+        )
+        key = self._key(connection)
         with self._lock:
-            if self._connection and not tokens.get("refresh_token"):
-                tokens["refresh_token"] = self._connection.tokens.get("refresh_token")
-            self._connection = _Connection(
-                tokens=tokens,
-                account={"email": profile.get("email"), "name": profile.get("name")},
-                account_id=profile.get("sub"),
-            )
+            previous = self._connections.get(key)
+            if previous and not tokens.get("refresh_token"):
+                tokens["refresh_token"] = previous.tokens.get("refresh_token")
+            self._connections[key] = connection  # reconnecting an account keeps its place in the list
         self._persist()
         logger.info("Google connected (%s mode) as %s", self.mode, profile.get("email"))
         if self.client.settings.auto_import_configured:
             self.ensure_events_subscription()  # best effort; problems are shown in auto_import_status()
         return self._back(return_path, google="connected")
 
-    def disconnect(self) -> None:
+    def disconnect(self, account: str | None = None) -> None:
+        """Disconnects one account (by email), or all accounts when account is None."""
         with self._lock:
-            connection, self._connection = self._connection, None
-            self._events_subscription = None
+            if account is None:
+                removed = list(self._connections.values())
+                self._connections.clear()
+            else:
+                connection = self._find(account)
+                was_primary = connection is self._connection
+                removed = [self._connections.pop(self._key(connection))]
+            if account is None or was_primary:
+                self._events_subscription = None  # the transcript-events subscription belongs to the primary account
         self._persist()
-        if connection:
+        for connection in removed:
             self.client.revoke(connection.tokens.get("refresh_token") or connection.tokens["access_token"])
 
     def _back(self, path: str, **query: str) -> str:
@@ -156,10 +206,8 @@ class GoogleConnector:
 
         return f"{self.frontend_url.rstrip('/')}{path}?{urlencode(query)}"
 
-    def _access_token(self) -> str:
-        connection = self._connection
-        if connection is None:
-            raise ConnectorError("Google is not connected.", 409)
+    def _access_token(self, account: str | None = None) -> str:
+        connection = self._find(account)
         tokens = connection.tokens
         if tokens["expires_at"] - time.time() < 60:
             refresh_token = tokens.get("refresh_token")
@@ -169,23 +217,26 @@ class GoogleConnector:
                 refreshed = self.client.refresh(refresh_token)
             except GoogleAPIError as exc:
                 with self._lock:
-                    self._connection = None
+                    self._connections.pop(self._key(connection), None)  # only this account; others keep working
                 self._persist()
-                raise ConnectorError("Google session expired. Connect again.", 409) from exc
+                email = connection.account.get("email") or "Google"
+                raise ConnectorError(f"The session for {email} expired. Connect it again.", 409) from exc
             tokens.update({k: v for k, v in refreshed.items() if k != "refresh_token"})
             self._persist()
         return tokens["access_token"]
 
-    def _require_scope(self, scope: str, label: str) -> None:
-        granted = set((self._connection.tokens.get("scope") or "").split()) if self._connection else set()
+    def _require_scope(self, scope: str, label: str, account: str | None = None) -> None:
+        connection = self._find(account) if self._connections else None
+        granted = set((connection.tokens.get("scope") or "").split()) if connection else set()
         if scope not in granted:
             raise ConnectorError(f"{label} access was not granted. Disconnect and connect Google again.", 403)
 
     # --- data ---------------------------------------------------------------------------------
 
-    def events(self, days_back: int, days_ahead: int) -> list[dict]:
-        token = self._access_token()
-        self._require_scope(REQUIRED_SCOPES[0], "Calendar")
+    def events(self, days_back: int, days_ahead: int, account: str | None = None) -> list[dict]:
+        """Meet events on an account's primary calendar (the primary account by default)."""
+        token = self._access_token(account)
+        self._require_scope(REQUIRED_SCOPES[0], "Calendar", account)
         now = datetime.now(timezone.utc)
         payload = self._call(self.client.list_events, token, now - timedelta(days=days_back), now + timedelta(days=days_ahead))
         events = [simplify_event(e) for e in payload.get("items", []) if e.get("status") != "cancelled"]
@@ -241,7 +292,7 @@ class GoogleConnector:
 
     @property
     def connected(self) -> bool:
-        return self._connection is not None
+        return bool(self._connections)
 
     def auto_import_status(self) -> dict:
         settings = self.client.settings

@@ -48,6 +48,10 @@ def remove_item(db: Session, meeting_id: UUID, kind: ItemKind, index: int, text:
         raise EditError("This item has changed or was already removed. Refresh the page.", 409)
 
     item = items.pop(index)
+    if kind == "action_items":
+        from app.workflows.action_items import remove_task
+
+        remove_task(db, meeting_id, text)
     flag_modified(header, "payload")
     segment = (item.get("evidence") or {}).get("segment_index")
     title = _recommendation_title(kind, text)

@@ -64,3 +64,17 @@ def test_connection_survives_restart_and_disconnect_forgets_it(api: TestClient, 
 
     restarted.disconnect()
     assert not _connector(store).connected
+
+
+
+def test_all_accounts_survive_restart_and_old_format_loads(memory_db) -> None:
+    store = CredentialStore(_key(), memory_db)
+    tokens = {"access_token": "a", "refresh_token": "r", "expires_at": 9e12, "scope": ""}
+    store.save("google:mock", {"accounts": [
+        {"tokens": tokens, "account": {"email": "one@example.com"}, "account_id": "1"},
+        {"tokens": tokens, "account": {"email": "two@example.com"}, "account_id": "2"},
+    ]})
+    assert [a["email"] for a in _connector(store).accounts()] == ["one@example.com", "two@example.com"]
+
+    store.save("google:mock", {"tokens": tokens, "account": {"email": "legacy@example.com"}, "account_id": "9"})
+    assert [a["email"] for a in _connector(store).accounts()] == ["legacy@example.com"]  # pre-multi-account format

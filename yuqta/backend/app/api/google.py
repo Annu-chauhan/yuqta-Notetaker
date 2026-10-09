@@ -55,10 +55,19 @@ def google_callback(
     return RedirectResponse(connector.complete_connect(code, state, error), status_code=status.HTTP_302_FOUND)
 
 
+class DisconnectRequest(BaseModel):
+    account: str | None = Field(default=None, max_length=320)  # an email; omitted = disconnect all accounts
+
+
 @router.post("/api/google/disconnect")
-def google_disconnect(connector: GoogleConnector = Depends(get_google_connector)) -> dict:
-    connector.disconnect()
-    return {"connected": False}
+def google_disconnect(
+    body: DisconnectRequest | None = None, connector: GoogleConnector = Depends(get_google_connector)
+) -> dict:
+    try:
+        connector.disconnect(body.account if body else None)
+    except ConnectorError as error:
+        raise _fail(error) from error
+    return {"connected": connector.connected, "accounts": connector.accounts()}
 
 
 @router.get("/api/google/events")

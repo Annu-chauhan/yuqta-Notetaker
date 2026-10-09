@@ -148,6 +148,7 @@ def _auto_join_status(settings: Settings, connector: GoogleConnector) -> dict:
         "enabled": settings.auto_join_calendar,
         "google_mode": connector.mode,
         "google_connected": connector.connected,
+        "accounts": [a.get("email") for a in connector.accounts()] if hasattr(connector, "accounts") else [],
         "hours_ahead": settings.auto_join_hours_ahead,
         "poll_seconds": settings.auto_join_poll_seconds,
         **calendar_auto_joiner.status(),

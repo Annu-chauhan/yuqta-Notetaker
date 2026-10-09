@@ -8,7 +8,20 @@ import { BarChartCard } from "@/components/dashboard/BarChartCard";
 import { DeleteItemButton, DeleteMeetingButton } from "@/components/DeleteMeetingButton";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ApiError, getHistory, type BarChartWidget, type HistoryItem, type KPI, type MeetingHistory } from "@/lib/api";
+import { TaskBoard } from "@/components/tasks/TaskBoard";
+import {
+  ApiError,
+  getHistory,
+  getReminders,
+  getTasks,
+  type BarChartWidget,
+  type HistoryItem,
+  type KPI,
+  type MeetingHistory,
+  type ReminderStatus,
+  type TaskList,
+  type TaskView,
+} from "@/lib/api";
 import { formatDateTime, formatSource } from "@/lib/format";
 
 export const metadata: Metadata = { title: "History · Yuqta" };
@@ -55,46 +68,6 @@ function ItemList({ title, items, icon, tone }: { title: string; items: HistoryI
   );
 }
 
-function ActionTable({ items }: { items: HistoryItem[] }) {
-  if (items.length === 0) return <p className="text-sm text-muted">No action items yet.</p>;
-  return (
-    <div className="relative overflow-x-auto rounded-lg border border-line bg-surface">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="border-b border-line text-xs text-muted">
-          <tr>
-            <th scope="col" className="px-3 py-2 font-medium">Task</th>
-            <th scope="col" className="px-3 py-2 font-medium">Owner</th>
-            <th scope="col" className="px-3 py-2 font-medium">Due</th>
-            <th scope="col" className="px-3 py-2 font-medium">From meeting</th>
-            <th scope="col" className="px-3 py-2 font-medium">
-              <span className="sr-only">Remove</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {items.map((item) => (
-            <tr key={`${item.meeting_id}-${item.index}`} className="align-top">
-              <td className="px-3 py-2">
-                <p className="font-medium">{item.text}</p>
-                <p className="mt-0.5 text-xs text-muted">“{item.quote}” — {item.speaker}</p>
-              </td>
-              <td className="px-3 py-2">{item.owner ?? <span className="text-amber-700 dark:text-amber-400">Unassigned</span>}</td>
-              <td className="px-3 py-2 whitespace-nowrap">{item.due ?? <span className="text-muted">Not set</span>}</td>
-              <td className="px-3 py-2">
-                <From item={item} />
-                <p className="text-xs text-muted">{formatDateTime(item.date)}</p>
-              </td>
-              <td className="px-3 py-2">
-                <DeleteItemButton meetingId={item.meeting_id} kind={item.kind} index={item.index} text={item.text} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function workload(history: MeetingHistory): BarChartWidget {
   return {
     type: "bar_chart",
@@ -109,12 +82,19 @@ function workload(history: MeetingHistory): BarChartWidget {
   };
 }
 
-export default async function HistoryPage() {
+const TASK_VIEWS: TaskView[] = ["open", "overdue", "due_soon", "done", "all"];
+
+export default async function HistoryPage({ searchParams }: PageProps<"/history">) {
   await connection();
+  const params = await searchParams;
+  const view = TASK_VIEWS.find((v) => v === params.view) ?? "open";
+  const owner = typeof params.owner === "string" && params.owner.length <= 200 ? params.owner : undefined;
   let history: MeetingHistory | null = null;
+  let tasks: TaskList | null = null;
+  let reminders: ReminderStatus | null = null;
   let loadError: string | null = null;
   try {
-    history = await getHistory();
+    [history, tasks, reminders] = await Promise.all([getHistory(), getTasks(view, owner), getReminders()]);
   } catch (error) {
     unstable_rethrow(error);
     loadError = error instanceof ApiError ? error.message : "Could not load the meeting history.";
@@ -142,20 +122,16 @@ export default async function HistoryPage() {
               previousLabel=""
               kpis={[
                 count("meetings", "Meetings", history.totals.meetings),
-                count("action_items", "Action items", history.totals.action_items),
-                count("unassigned", "Without an owner", history.totals.unassigned_action_items),
+                count("open_tasks", "Open tasks", tasks ? tasks.counts.open + tasks.counts.in_progress : 0),
+                count("overdue", "Overdue", tasks?.counts.overdue ?? 0),
+                count("done", "Done", tasks?.counts.done ?? 0),
                 count("decisions", "Decisions", history.totals.decisions),
                 count("risks", "Risks raised", history.totals.risks),
                 count("questions", "Open questions", history.totals.open_questions),
               ]}
             />
 
-            <section aria-label="Action items">
-              <h2 className="mb-3 text-sm font-semibold">
-                Action items across all meetings <span className="font-normal text-muted">· newest meeting first</span>
-              </h2>
-              <ActionTable items={history.action_items} />
-            </section>
+            {tasks && <TaskBoard list={tasks} view={view} owner={owner} reminders={reminders} />}
 
             {history.owners.length > 0 && <BarChartCard widget={workload(history)} />}
 

@@ -128,7 +128,8 @@ class GoogleWorkspaceClient:
             "scope": " ".join(self.scopes()),
             "access_type": "offline",
             "include_granted_scopes": "true",
-            "prompt": "consent",
+            # select_account: Google shows its account chooser, so another person's account can be added.
+            "prompt": "select_account consent",
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",

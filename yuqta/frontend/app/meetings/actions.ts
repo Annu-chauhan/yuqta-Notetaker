@@ -13,11 +13,13 @@ import {
   deleteMeetingItem,
   leaveBot,
   sendBot,
+  sendReminderNow,
   syncCalendar,
+  updateTask,
   uploadMeetingAudio,
 } from "@/lib/api";
 
-export type ActionState = { error: string | null };
+export type ActionState = { error: string | null; message?: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -171,4 +173,41 @@ export async function deleteBotAction(_: ActionState, formData: FormData): Promi
   }
   refresh();
   return { error: null };
+}
+
+const TASK_STATUSES = new Set(["open", "in_progress", "done"]);
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Changes one field of a tracked task: status, owner or due date (empty value clears owner/due date). */
+export async function updateTaskAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("id"));
+  const field = String(formData.get("field") ?? "");
+  const raw = formData.get("value");
+  // A missing value (as opposed to an empty one) must never be read as "clear the owner / due date".
+  if (typeof raw !== "string") return { error: "Nothing to save. Try again." };
+  const value = raw.trim();
+  if (!Number.isInteger(id) || id <= 0) return { error: "Invalid task." };
+  let patch: Parameters<typeof updateTask>[1];
+  if (field === "status" && TASK_STATUSES.has(value)) patch = { status: value as "open" };
+  else if (field === "owner" && value.length <= 200) patch = { owner: value || null };
+  else if (field === "due_date" && (value === "" || ISO_DAY.test(value))) patch = { due_date: value || null };
+  else return { error: "Invalid change." };
+  try {
+    await updateTask(id, patch);
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: errorMessage(error, "Could not update the task.") };
+  }
+  refresh();
+  return { error: null };
+}
+
+export async function sendReminderAction(): Promise<ActionState> {
+  try {
+    const result = await sendReminderNow();
+    return { error: null, message: `Sent to ${result.sent_to.join(", ")}.` };
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: errorMessage(error, "Could not send the reminder.") };
+  }
 }

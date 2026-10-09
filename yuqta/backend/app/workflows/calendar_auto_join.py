@@ -55,32 +55,47 @@ class CalendarAutoJoiner:
             if not connector.connected:
                 self.last_error = "Google Calendar is not connected."
                 return []
-            try:
-                events = connector.events(0, max(1, -(-hours_ahead // 24)))
-            except ConnectorError as error:
-                if "Could not reach Google" in str(error):  # network/DNS blip: temporary, retried on the next run
-                    self.last_error = "Could not reach Google (network problem). Yuqta retries automatically on the next check."
-                else:
-                    self.last_error = f"Could not read the calendar: {error}"
-                logger.warning("Calendar auto-join: %s", error)
+            days = max(1, -(-hours_ahead // 24))
+            events, problems = [], []
+            for account in _account_emails(connector):
+                try:
+                    found = connector.events(0, days, account=account) if account else connector.events(0, days)
+                    events += [{**event, "account": account} for event in found]
+                except ConnectorError as error:
+                    if "Could not reach Google" in str(error):  # network/DNS blip: temporary, retried on the next run
+                        problems.append("Could not reach Google (network problem). Yuqta retries automatically on the next check.")
+                    else:
+                        problems.append(f"Could not read {account or 'the'} calendar: {error}")
+                    logger.warning("Calendar auto-join (%s): %s", account, error)
+            if problems and not events:
+                self.last_error = problems[0]
                 return []
-            self.last_error = None
+            # Unique problems only; a network outage would otherwise repeat once per account.
+            self.last_error = " ".join(dict.fromkeys(problems)) or None
             horizon = now + timedelta(hours=hours_ahead)
-            wanted = {}
+            wanted, seen_meetings = {}, set()
             for event in events:
                 start, end = _time(event.get("start")), _time(event.get("end"))
                 url = normalize_meeting_url(event.get("meet_link") or "") if event.get("meet_link") else None
                 if (event.get("all_day") or event.get("declined") or not url or start is None
                         or start > horizon or (end is not None and end <= now)):
                     continue
+                meeting = (url, start)  # the same meeting on several people's calendars gets one bot
+                if meeting in seen_meetings or event["id"] in wanted:
+                    continue
+                seen_meetings.add(meeting)
                 wanted[event["id"]] = (event, url, start)
 
             with session_factory() as db:
-                changes = self._sync(db, client, wanted, bot_name, now, horizon)
+                # If a calendar could not be read, its meetings would look deleted: cancel nothing this time.
+                changes = self._sync(db, client, wanted, bot_name, now, horizon, allow_cancel=not problems)
             self.recent = (changes + self.recent)[:20]
             return changes
 
-    def _sync(self, db: Session, client: MeetingBotClient, wanted: dict, bot_name: str, now: datetime, horizon: datetime) -> list[str]:
+    def _sync(
+        self, db: Session, client: MeetingBotClient, wanted: dict, bot_name: str, now: datetime, horizon: datetime,
+        allow_cancel: bool = True,
+    ) -> list[str]:
         changes: list[str] = []
         known = {
             bot.calendar_event_id: bot
@@ -91,7 +106,7 @@ class CalendarAutoJoiner:
 
         # Events that disappeared from the calendar (deleted, declined): cancel their scheduled bots.
         for event_id, bot in known.items():
-            if event_id in wanted or bot.status != "scheduled" or bot.join_at is None:
+            if not allow_cancel or event_id in wanted or bot.status != "scheduled" or bot.join_at is None:
                 continue
             if _aware(bot.join_at) <= horizon and _aware(bot.join_at) - now > CHANGEABLE_BEFORE:
                 if self._cancel(db, client, bot, "Cancelled: the meeting was removed from the calendar or declined."):
@@ -130,6 +145,13 @@ class CalendarAutoJoiner:
                 return True
             logger.warning("Calendar auto-join could not cancel bot %s: %s", bot.id, error)
             return False
+
+
+def _account_emails(connector: GoogleConnector) -> list[str | None]:
+    """Every connected account; [None] (= the primary) for connectors without multi-account support."""
+    accounts = getattr(connector, "accounts", None)
+    emails = [a.get("email") for a in accounts()] if callable(accounts) else []
+    return [e for e in emails if e] or [None]
 
 
 def _time(value: str | None) -> datetime | None:

@@ -26,6 +26,7 @@ from app.db.models import Meeting, MeetingInsight
 from app.plugins.llm.base import LLMError, LLMProvider
 from app.schemas.analysis import KPI, AnalysisResult, AnalysisSummary, CorrelatedSignal, DataCheck, Periods, Recommendation, RootCause
 from app.schemas.dashboard import DashboardSpec
+from app.workflows.action_items import sync_action_items
 from app.schemas.transcript import SegmentIn
 
 
@@ -102,6 +103,7 @@ def analyze_meeting(db: Session, llm: LLMProvider, meeting_id: UUID) -> Analysis
         + [MeetingInsight(meeting_id=meeting.id, insight_type="root_cause", payload=r.model_dump(mode="json")) for r in root_causes]
         + [MeetingInsight(meeting_id=meeting.id, insight_type="recommendation", payload=r.model_dump(mode="json")) for r in recommendations]
     )
+    sync_action_items(db, meeting, meeting_info.action_items)
     db.execute(delete(DashboardSpecRow).where(DashboardSpecRow.meeting_id == meeting.id))
     db.add(DashboardSpecRow(meeting_id=meeting.id, title=spec.title, spec=spec.model_dump(mode="json")))
     meeting.status = "analyzed"

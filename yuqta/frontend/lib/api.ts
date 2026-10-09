@@ -266,6 +266,8 @@ export type GoogleStatus = {
   connected: boolean;
   account: { email: string | null; name: string | null } | null;
   missing_scopes: string[];
+  /** Every connected Google account; the first is the primary one (Import page, transcript import). */
+  accounts: { email: string | null; name: string | null; missing_scopes: string[] }[];
 };
 
 export type GoogleEvent = {
@@ -288,7 +290,9 @@ export type ConferenceRecord = {
 export const getGoogleStatus = () => request<GoogleStatus>("/api/google/status");
 export const connectGoogle = (returnPath: string) =>
   request<{ authorization_url: string }>("/api/google/connect", json({ return_path: returnPath }));
-export const disconnectGoogle = () => request<{ connected: boolean }>("/api/google/disconnect", { method: "POST" });
+/** Disconnects one account (by email), or every account when none is given. */
+export const disconnectGoogle = (account?: string) =>
+  request<{ connected: boolean }>("/api/google/disconnect", json(account ? { account } : {}));
 export const listGoogleEvents = (daysBack: number) =>
   request<{ events: GoogleEvent[] }>(`/api/google/events?days_back=${daysBack}&days_ahead=1`);
 
@@ -397,6 +401,7 @@ export type CalendarAutoJoin = {
   enabled: boolean;
   google_mode: "mock" | "live";
   google_connected: boolean;
+  accounts: string[];
   hours_ahead: number;
   poll_seconds: number;
   last_run_at: string | null;
@@ -456,6 +461,61 @@ export type MeetingHistory = {
 };
 
 export const getHistory = () => request<MeetingHistory>("/api/history");
+
+// --- Action item tracking ------------------------------------------------------------------
+
+export type TaskStatus = "open" | "in_progress" | "done";
+export type TaskView = "open" | "overdue" | "due_soon" | "done" | "all";
+
+export type Task = {
+  id: number;
+  meeting_id: string;
+  meeting_title: string;
+  meeting_date: string;
+  task: string;
+  owner: string | null;
+  due_text: string | null;
+  due_date: string | null; // YYYY-MM-DD
+  status: TaskStatus;
+  overdue: boolean;
+  due_today: boolean;
+  edited: boolean;
+  speaker: string | null;
+  quote: string | null;
+  completed_at: string | null;
+  index: number | null;
+};
+
+export type TaskList = {
+  today: string;
+  counts: { open: number; in_progress: number; overdue: number; due_today: number; done: number; unassigned: number };
+  owners: string[];
+  tasks: Task[];
+};
+
+export function getTasks(view: TaskView, owner?: string) {
+  const params = new URLSearchParams({ view });
+  if (owner) params.set("owner", owner);
+  return request<TaskList>(`/api/action-items?${params}`);
+}
+
+/** Only the given fields change; owner or due_date null clears them. */
+export const updateTask = (id: number, patch: { status?: TaskStatus; owner?: string | null; due_date?: string | null }) =>
+  request<TaskList>(`/api/action-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+
+export type ReminderStatus = {
+  configured: boolean;
+  recipients: string[];
+  hour: number;
+  timezone: string;
+  last_sent: { day: string; subject: string } | null;
+  last_error: string | null;
+  preview: { subject: string; overdue: number; due_today: number; due_soon: number };
+};
+
+export const getReminders = () => request<ReminderStatus>("/api/action-items/reminders");
+export const sendReminderNow = () =>
+  request<{ sent_to: string[]; subject: string }>("/api/action-items/reminders/send", { method: "POST", timeoutMs: 60_000 });
 export const deleteMeetingItem = (meetingId: string, kind: HistoryItem["kind"], index: number, text: string) =>
   request<void>(
     `/api/meetings/${encodeURIComponent(meetingId)}/items/${kind}/${index}?${new URLSearchParams({ text })}`,

@@ -160,23 +160,52 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
 
         {status?.connected && (
           <>
-            <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
-              <p>
-                Connected as <strong>{status.account?.name ?? status.account?.email}</strong>
-                {status.account?.name && status.account.email ? <span className="text-muted"> · {status.account.email}</span> : null}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {RANGES.map((range) => (
-                  <Link key={range} href={`/import?days=${range}`} className={range === days ? primary : secondary}>
-                    {range === 1 ? "Past day" : `Past ${range} days`}
-                  </Link>
-                ))}
-                <form action={disconnectGoogleAction}>
+            <section aria-labelledby="accounts-heading" className="mt-8 rounded-lg border border-line bg-surface p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 id="accounts-heading" className="font-semibold">
+                    Connected Google accounts <span className="font-normal text-muted">· {status.accounts.length}</span>
+                  </h2>
+                  <p className="text-muted">
+                    Calendar auto-join reads every account&apos;s calendar and sends one bot per meeting. Imports below use
+                    the first account.
+                  </p>
+                </div>
+                <form action={connectGoogleAction}>
                   <button type="submit" className={secondary}>
-                    Disconnect
+                    + Connect another Google account
                   </button>
                 </form>
               </div>
+              <ul className="mt-3 divide-y divide-line border-t border-line">
+                {status.accounts.map((account, index) => (
+                  <li key={account.email ?? index} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <p className="min-w-0">
+                      <strong>{account.name ?? account.email}</strong>
+                      {account.name && account.email ? <span className="text-muted"> · {account.email}</span> : null}
+                      {index === 0 && <span className="ml-2 rounded bg-background px-1.5 py-0.5 text-xs text-muted">primary</span>}
+                      {account.missing_scopes.length > 0 && (
+                        <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">Calendar or Meet access missing: reconnect</span>
+                      )}
+                    </p>
+                    <form action={disconnectGoogleAction}>
+                      <input type="hidden" name="account" value={account.email ?? ""} />
+                      <button type="submit" className={secondary} aria-label={`Disconnect ${account.email ?? "account"}`}>
+                        Disconnect
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted">Meet events of the primary account:</span>
+              {RANGES.map((range) => (
+                <Link key={range} href={`/import?days=${range}`} className={range === days ? primary : secondary}>
+                  {range === 1 ? "Past day" : `Past ${range} days`}
+                </Link>
+              ))}
             </div>
             {autoImport && <AutoImportPanel status={autoImport} />}
 

@@ -34,9 +34,11 @@ export async function connectGoogleAction(): Promise<void> {
   redirect(url); // Google's consent screen (or, in mock mode, straight to the backend callback)
 }
 
-export async function disconnectGoogleAction(): Promise<void> {
+export async function disconnectGoogleAction(formData: FormData): Promise<void> {
+  const account = String(formData.get("account") ?? "").trim();
+  if (account.length > 320) redirect(withError("/import", "Invalid account."));
   try {
-    await disconnectGoogle();
+    await disconnectGoogle(account || undefined);
   } catch (error) {
     unstable_rethrow(error);
   }

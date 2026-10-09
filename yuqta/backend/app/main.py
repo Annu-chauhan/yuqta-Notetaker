@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
+from app.api.action_items import router as action_items_router
 from app.api.bots import router as bots_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
@@ -96,6 +97,19 @@ def _start_calendar_auto_join():
     return worker
 
 
+def _start_reminders():
+    """Checks every 10 minutes whether today's task reminder is due (needs SMTP settings; not in tests)."""
+    from app.db.session import new_session
+    from app.workflows.auto_import import AutoImportWorker
+    from app.workflows.reminders import configured, reminder_scheduler
+
+    if settings.app_env == "test" or not configured(settings):
+        return None
+    worker = AutoImportWorker(None, 600, lambda: reminder_scheduler.run_once(get_settings(), new_session), name="task-reminders")
+    worker.start()
+    return worker
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info(
@@ -109,7 +123,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     if not settings.api_auth_token and settings.app_env == "production":
         logger.warning("API_AUTH_TOKEN is not set: the API is unauthenticated")
-    workers = [w for w in (_start_auto_import(), _start_meeting_bots(), _start_calendar_auto_join()) if w]
+    workers = [w for w in (_start_auto_import(), _start_meeting_bots(), _start_calendar_auto_join(), _start_reminders()) if w]
     yield
     for worker in workers:
         worker.stop()
@@ -130,6 +144,7 @@ app.include_router(bots_router)
 app.include_router(meetings_router)
 app.include_router(dashboard_router)
 app.include_router(history_router)
+app.include_router(action_items_router)
 app.include_router(google_router)
 app.include_router(system_router)
 

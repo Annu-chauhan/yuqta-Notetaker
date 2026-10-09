@@ -156,3 +156,44 @@ def test_network_problems_are_reported_as_temporary(memory_db, client) -> None:
     assert joiner.last_error == "Could not reach Google (network problem). Yuqta retries automatically on the next check."
     _run(joiner, FakeCalendar([]), client, memory_db)
     assert joiner.last_error is None  # cleared as soon as Google is reachable again
+
+
+
+class TwoCalendars:
+    """Two connected accounts; the shared meeting is on both calendars."""
+
+    mode, connected = "live", True
+
+    def __init__(self, per_account: dict[str, list[dict]], failing: set[str] = frozenset()):
+        self.per_account, self.failing = per_account, failing
+
+    def accounts(self):
+        return [{"email": email} for email in self.per_account]
+
+    def events(self, days_back, days_ahead, account=None):
+        if account in self.failing:
+            raise ConnectorError(f"The session for {account} expired. Connect it again.", 409)
+        return self.per_account[account]
+
+
+def test_shared_meeting_on_two_calendars_gets_one_bot(memory_db, client) -> None:
+    shared_for_parul = event("p-copy", timedelta(hours=2))
+    shared_for_kirty = {**event("k-copy", timedelta(hours=2))}  # different event id, same link and time
+    calendars = TwoCalendars({
+        "parul@example.com": [shared_for_parul],
+        "kirty@example.com": [shared_for_kirty, event("kirty-only", timedelta(hours=3), meet_link="https://meet.google.com/kkk-kkkk-kkk")],
+    })
+    joiner = CalendarAutoJoiner()
+    changes = _run(joiner, calendars, client, memory_db)
+    assert len(changes) == 2 and joiner.last_error is None
+    assert set(_bots(memory_db)) == {"p-copy:scheduled", "kirty-only:scheduled"}
+
+
+def test_one_failing_account_cancels_nothing(memory_db, client) -> None:
+    calendars = TwoCalendars({"parul@example.com": [event("mine", timedelta(hours=2))], "kirty@example.com": [event("hers", timedelta(hours=3), meet_link="https://meet.google.com/kkk-kkkk-kkk")]})
+    joiner = CalendarAutoJoiner()
+    _run(joiner, calendars, client, memory_db)
+    calendars.failing = {"kirty@example.com"}  # her session expired: her meeting must not look deleted
+    _run(joiner, calendars, client, memory_db)
+    assert set(_bots(memory_db)) == {"mine:scheduled", "hers:scheduled"}
+    assert "kirty@example.com expired" in joiner.last_error

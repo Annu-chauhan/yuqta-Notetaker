@@ -177,6 +177,39 @@ class MeetingBot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ActionItem(Base):
+    """A task agreed in a meeting, tracked until done. Kept in step with the analysis (workflows/action_items.py)."""
+
+    __tablename__ = "action_items"
+    __table_args__ = (CheckConstraint("status IN ('open', 'in_progress', 'done')", name="status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    meeting_id: Mapped[UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    task: Mapped[str] = mapped_column(Text)
+    owner: Mapped[str | None] = mapped_column(String(200))
+    due_text: Mapped[str | None] = mapped_column(String(100))  # as said, e.g. "by friday"
+    due_date: Mapped[date | None] = mapped_column(Date, index=True)  # parsed from due_text, or set by hand
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    edited: Mapped[bool] = mapped_column(default=False)  # owner/due changed by hand: a re-run analysis keeps them
+    segment_index: Mapped[int | None]
+    speaker: Mapped[str | None] = mapped_column(String(200))
+    quote: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ReminderLog(Base):
+    """One row per day a task reminder was handled, so it is sent at most once a day."""
+
+    __tablename__ = "reminder_log"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    recipients: Mapped[str] = mapped_column(Text, default="")
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ConnectorCredential(Base):
     """Encrypted credentials of a connector (app/db/credentials.py), e.g. the Google OAuth tokens."""
 

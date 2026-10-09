@@ -41,7 +41,7 @@ def _connect(client: TestClient) -> str:
 
 def test_connect_flow(google: TestClient) -> None:
     assert google.get("/api/google/status").json() == {
-        "mode": "mock", "configured": True, "connected": False, "account": None, "missing_scopes": [],
+        "mode": "mock", "configured": True, "connected": False, "account": None, "missing_scopes": [], "accounts": [],
     }
     assert _connect(google) == "http://frontend.test/import?google=connected"
     status = google.get("/api/google/status").json()
@@ -140,7 +140,7 @@ def test_expired_token_is_refreshed(google: TestClient, connector: GoogleConnect
 
 def test_disconnect(google: TestClient) -> None:
     _connect(google)
-    assert google.post("/api/google/disconnect").json() == {"connected": False}
+    assert google.post("/api/google/disconnect").json() == {"connected": False, "accounts": []}
     assert google.get("/api/google/status").json()["connected"] is False
 
 
@@ -178,3 +178,29 @@ def test_entries_merge_consecutive_turns() -> None:
         ("Ari", "First still me", 0.0, 3.0),
         ("Sam", "Second", 5.0, None),
     ]
+
+
+
+def _connect_as(client: TestClient, connector: GoogleConnector, email: str, name: str) -> None:
+    profile = {"email": email, "name": name, "sub": f"sub-{email}"}
+    original = connector.client.userinfo
+    connector.client.userinfo = lambda token: profile
+    try:
+        _connect(client)
+    finally:
+        connector.client.userinfo = original
+
+
+def test_several_accounts_can_be_connected(google: TestClient, connector: GoogleConnector) -> None:
+    _connect_as(google, connector, "parul@example.com", "Parul")
+    _connect_as(google, connector, "kirty@example.com", "Kirty")
+    _connect_as(google, connector, "parul@example.com", "Parul")  # reconnecting does not duplicate
+    status = google.get("/api/google/status").json()
+    assert [a["email"] for a in status["accounts"]] == ["parul@example.com", "kirty@example.com"]
+    assert status["account"]["email"] == "parul@example.com"  # the first account stays primary
+    assert connector.events(1, 1, account="KIRTY@example.com")  # each account's calendar can be read
+
+    left = google.post("/api/google/disconnect", json={"account": "parul@example.com"}).json()
+    assert left["connected"] is True and [a["email"] for a in left["accounts"]] == ["kirty@example.com"]
+    assert google.get("/api/google/status").json()["account"]["email"] == "kirty@example.com"  # next one becomes primary
+    assert google.post("/api/google/disconnect", json={"account": "nobody@example.com"}).status_code == 409

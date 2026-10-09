@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     # AWS Transcribe: languages to detect and switch between (first = preferred), as AWS language codes.
     aws_language_options: str = "en-IN,hi-IN"
     bot_name: str = "Yuqta Notetaker"
+    # Daily task reminder email (off unless SMTP_HOST, SMTP_FROM and REMINDER_TO are set).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    reminder_to: str = ""  # comma-separated addresses
+    reminder_hour: int = 9  # local hour (DISPLAY_TIMEZONE) after which the day's reminder is sent
     # Calendar auto-join: send the bot to every Google Meet on the connected Google Calendar.
     auto_join_calendar: bool = False
     auto_join_hours_ahead: int = 24

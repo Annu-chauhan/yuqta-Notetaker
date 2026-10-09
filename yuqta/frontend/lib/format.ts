@@ -60,3 +60,15 @@ const month = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric"
 export function formatPeriod(isoDate: string): string {
   return month.format(new Date(`${isoDate}T00:00:00Z`));
 }
+
+const day = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+/** "2026-10-14" -> "Wed 14 Oct". Calendar dates have no time zone, so they are formatted as UTC. */
+export function formatDay(isoDate: string | null): string {
+  return isoDate ? day.format(new Date(`${isoDate}T00:00:00Z`)) : "";
+}
+
+/** Whole days from `fromIso` to `toIso` (both YYYY-MM-DD). */
+export function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000);
+}

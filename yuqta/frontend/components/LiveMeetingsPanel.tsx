@@ -110,8 +110,15 @@ function CalendarBox({ calendar }: { calendar: CalendarAutoJoin }) {
           </>
         ) : (
           <>
-            Yuqta joins every Google Meet in the next {calendar.hours_ahead} hours, a minute before it starts. Checked
-            every {every}{calendar.last_run_at ? `, last ${formatDateTime(calendar.last_run_at)}` : ""}.
+            Yuqta joins every Google Meet in the next {calendar.hours_ahead} hours on{" "}
+            {calendar.accounts.length > 1
+              ? `${calendar.accounts.length} calendars (${calendar.accounts.join(", ")})`
+              : (calendar.accounts[0] ?? "your calendar")}
+            , a minute before it starts. Checked every {every}
+            {calendar.last_run_at ? `, last ${formatDateTime(calendar.last_run_at)}` : ""}.{" "}
+            <Link href="/import" className="underline underline-offset-2">
+              Add or remove accounts
+            </Link>
           </>
         )}
       </p>

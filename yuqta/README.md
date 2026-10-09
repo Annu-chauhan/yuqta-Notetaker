@@ -325,6 +325,18 @@ The frontend reads the backend URL from the server-side variable `API_INTERNAL_U
 > PowerShell: `$env:DISABLE_SQLALCHEMY_CEXT=1; pip install --force-reinstall --no-deps --no-binary sqlalchemy "sqlalchemy>=2.0,<3.0"`.
 > Docker is unaffected.
 
+## Keeping secrets out of git
+
+`.env` holds your API keys and is git-ignored. As a second safety net, enable the pre-commit hook once per clone
+(from the repository root):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It refuses any commit that contains an `.env` file, a value from your local `.env`, or a recognisable API or
+private key (OpenRouter, Anthropic, AWS, Google, GitHub). Never bypass it with `--no-verify`; remove the secret instead.
+
 ## Configuration
 
 All configuration comes from environment variables (see `.env.example`). Secrets are never hard-coded, and `.env` is git-ignored.

@@ -15,6 +15,7 @@ from app.api.google import router as google_router
 from app.api.health import router as health_router
 from app.api.history import router as history_router
 from app.api.meetings import router as meetings_router
+from app.api.minutes import router as minutes_router
 from app.api.system import router as system_router
 from app.connectors.meeting_bot import BotError
 from app.core.auth import require_service_token
@@ -142,6 +143,7 @@ app.include_router(health_router)
 app.include_router(customers_router)
 app.include_router(bots_router)
 app.include_router(meetings_router)
+app.include_router(minutes_router)
 app.include_router(dashboard_router)
 app.include_router(history_router)
 app.include_router(action_items_router)

@@ -6,8 +6,9 @@ import { AnalyzeMeetingButton } from "@/components/AnalyzeMeetingButton";
 import { MeetingAnalysis } from "@/components/analysis/MeetingAnalysis";
 import { SiteHeader } from "@/components/SiteHeader";
 import { DeleteMeetingButton } from "@/components/DeleteMeetingButton";
+import { MinutesPanel } from "@/components/MinutesPanel";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ApiError, getAnalysis, getMeeting, type Analysis, type MeetingDetail } from "@/lib/api";
+import { ApiError, getAnalysis, getMeeting, getMinutes, type Analysis, type MeetingDetail, type MinutesStatus } from "@/lib/api";
 import { formatDateTime, formatSeconds, formatSource } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Meeting · Yuqta" };
@@ -23,9 +24,10 @@ export default async function MeetingPage({ params }: PageProps<"/meetings/[id]"
   const { id } = await params;
   let meeting: MeetingDetail | null;
   let analysis: Analysis | null = null;
+  let minutes: MinutesStatus | null = null;
   try {
     meeting = await getMeeting(id);
-    if (meeting?.status === "analyzed") analysis = await getAnalysis(meeting.id);
+    if (meeting?.status === "analyzed") [analysis, minutes] = await Promise.all([getAnalysis(meeting.id), getMinutes(meeting.id)]);
   } catch (error) {
     unstable_rethrow(error);
     return <MeetingUnavailable message={error instanceof ApiError ? error.message : "Could not load this meeting."} />;
@@ -95,7 +97,16 @@ export default async function MeetingPage({ params }: PageProps<"/meetings/[id]"
 
         <div className="mt-12 border-t border-line pt-10">
           {analysis ? (
-            <MeetingAnalysis analysis={analysis} />
+            <>
+              <MeetingAnalysis analysis={analysis} />
+              {minutes && (
+                <MinutesPanel
+                  meetingId={meeting.id}
+                  minutes={minutes}
+                  sentAt={minutes.sent_at ? formatDateTime(minutes.sent_at) : null}
+                />
+              )}
+            </>
           ) : meeting.segments.length > 0 ? (
             <div className="flex flex-col gap-4 rounded-lg border border-dashed border-line px-5 py-6 sm:flex-row sm:items-center sm:justify-between">
               <div>

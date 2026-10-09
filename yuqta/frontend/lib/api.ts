@@ -523,3 +523,29 @@ export const deleteMeetingItem = (meetingId: string, kind: HistoryItem["kind"], 
   );
 export const deleteMeeting = (meetingId: string) =>
   request<void>(`/api/meetings/${encodeURIComponent(meetingId)}`, { method: "DELETE" });
+
+// --- Meeting minutes email ---------------------------------------------------------------
+
+export type MinutesStatus = {
+  mode: "off" | "review" | "auto";
+  mail_configured: boolean;
+  status: "not_sent" | "awaiting_approval" | "sent" | "failed" | "skipped";
+  detail: string;
+  recipients: string[];
+  external: string[];
+  subject: string | null;
+  sent_at: string | null;
+  preview_html: string | null;
+};
+
+export async function getMinutes(meetingId: string): Promise<MinutesStatus | null> {
+  try {
+    return await request<MinutesStatus>(`/api/meetings/${encodeURIComponent(meetingId)}/minutes`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export const sendMinutes = (meetingId: string, recipients: string[]) =>
+  request<MinutesStatus>(`/api/meetings/${encodeURIComponent(meetingId)}/minutes/send`, { ...json({ recipients }), timeoutMs: 60_000 });

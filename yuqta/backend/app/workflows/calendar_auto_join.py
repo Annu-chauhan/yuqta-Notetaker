@@ -123,7 +123,10 @@ class CalendarAutoJoiner:
                 if not self._cancel(db, client, bot, "Rescheduled: the meeting time changed."):
                     continue
             try:
-                send_bot(db, client, url, title, bot_name, join_at=join_at, calendar_event_id=event_id)
+                send_bot(
+                    db, client, url, title, bot_name, join_at=join_at, calendar_event_id=event_id,
+                    attendee_emails=event.get("attendee_emails") or [],
+                )
             except BotError as error:
                 logger.warning("Calendar auto-join could not schedule %s: %s", event_id, error)
                 changes.append(f"Could not send the bot to “{title}”: {error}")

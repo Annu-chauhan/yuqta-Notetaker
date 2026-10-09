@@ -13,6 +13,7 @@ import {
   deleteMeetingItem,
   leaveBot,
   sendBot,
+  sendMinutes,
   sendReminderNow,
   syncCalendar,
   updateTask,
@@ -210,4 +211,25 @@ export async function sendReminderAction(): Promise<ActionState> {
     unstable_rethrow(error);
     return { error: errorMessage(error, "Could not send the reminder.") };
   }
+}
+
+/** Sends the meeting's minutes to the addresses typed in the form (approving a held email, or by hand). */
+export async function sendMinutesAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const meetingId = String(formData.get("meetingId") ?? "");
+  if (!UUID_PATTERN.test(meetingId)) return { error: "Invalid meeting id." };
+  const recipients = String(formData.get("recipients") ?? "")
+    .split(/[\s,;]+/)
+    .map((address) => address.trim())
+    .filter(Boolean)
+    .slice(0, 100);
+  if (recipients.length === 0) return { error: "Add at least one email address." };
+  let sentTo: string[];
+  try {
+    sentTo = (await sendMinutes(meetingId, recipients)).recipients;
+  } catch (error) {
+    unstable_rethrow(error);
+    return { error: errorMessage(error, "Could not send the minutes.") };
+  }
+  refresh();
+  return { error: null, message: `Sent to ${sentTo.join(", ")}.` };
 }

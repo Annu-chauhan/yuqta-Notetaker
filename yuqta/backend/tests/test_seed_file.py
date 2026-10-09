@@ -34,6 +34,7 @@ def test_all_tables_are_defined() -> None:
         "meetings",
         "transcript_segments",
         "meeting_bots",
+        "minutes_emails",
         "connector_credentials",
         "action_items",
         "reminder_log",

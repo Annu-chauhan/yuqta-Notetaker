@@ -6,11 +6,8 @@ port 587, and an app password). Nothing is sent when there is nothing due, unles
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from email.message import EmailMessage
 from html import escape
 import logging
-import smtplib
-import ssl
 import threading
 from zoneinfo import ZoneInfo
 
@@ -18,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.mailer import MailError, send_email
 from app.db.models import ActionItem, Meeting, ReminderLog
 from app.workflows.action_items import today
 
@@ -108,24 +106,10 @@ def send(settings: Settings, digest: Digest) -> list[str]:
     if not configured(settings):
         raise ReminderError("Reminders are not set up. Set SMTP_HOST, SMTP_FROM and REMINDER_TO (see .env.example).", 409)
     recipients = _recipients(settings)
-    message = EmailMessage()
-    message["Subject"], message["From"], message["To"] = digest.subject, settings.smtp_from, ", ".join(recipients)
-    message.set_content(digest.text)
-    message.add_alternative(digest.html, subtype="html")
     try:
-        if settings.smtp_port == 465:
-            server = smtplib.SMTP_SSL(settings.smtp_host, 465, timeout=30, context=ssl.create_default_context())
-        else:
-            server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30)
-            server.starttls(context=ssl.create_default_context())
-        with server:
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(message)
-    except smtplib.SMTPAuthenticationError as error:
-        raise ReminderError("The email server rejected the login (check SMTP_USER and SMTP_PASSWORD; Gmail needs an app password).") from error
-    except (smtplib.SMTPException, OSError) as error:
-        raise ReminderError(f"Could not send the reminder: {error.__class__.__name__}: {error}") from error
+        send_email(settings, recipients, digest.subject, digest.text, digest.html)
+    except MailError as error:
+        raise ReminderError(str(error).replace("send the email", "send the reminder"), error.status_code) from error
     logger.info("Task reminder sent to %d recipient(s): %s", len(recipients), digest.subject)
     return recipients
 

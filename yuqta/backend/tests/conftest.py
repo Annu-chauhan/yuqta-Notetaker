@@ -11,7 +11,8 @@ for _secret in ("DEEPGRAM_API_KEY", "LLM_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_C
     os.environ[_secret] = ""
 os.environ["LLM_MODEL"] = "typesafe/jev-router"
 os.environ["DISPLAY_TIMEZONE"] = "UTC"
-for _reminder_setting in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "REMINDER_TO"):
+os.environ["MINUTES_EMAIL"] = "off"
+for _reminder_setting in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "REMINDER_TO", "MINUTES_TO", "INTERNAL_DOMAINS"):
     os.environ[_reminder_setting] = ""  # never send real email from tests  # times in tests are asserted in UTC, whatever the developer's .env says
 
 from collections.abc import Iterator  # noqa: E402

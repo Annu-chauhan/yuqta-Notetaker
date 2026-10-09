@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.connectors.meeting_bot.base import BotError, BotState, MeetingBotClient, parse_transcript
-from app.core.config import local_time
+from app.core.config import get_settings, local_time
 from app.db.models import MeetingBot
 from app.plugins.llm.base import LLMProvider
 from app.workflows.analyze_meeting import analyze_meeting
@@ -69,6 +69,7 @@ def send_bot(
     bot_name: str,
     join_at: datetime | None = None,
     calendar_event_id: str | None = None,
+    attendee_emails: list[str] | None = None,
 ) -> MeetingBot:
     """Sends the bot now, or schedules it for join_at (a time in the future)."""
     scheduled = join_at is not None and join_at > datetime.now(timezone.utc)
@@ -83,6 +84,7 @@ def send_bot(
         detail=_scheduled_detail(join_at) if scheduled else _LIVE_DETAIL["joining"],
         join_at=join_at if scheduled else None,
         calendar_event_id=calendar_event_id,
+        attendee_emails=attendee_emails or None,
     )
     db.add(bot)
     db.commit()
@@ -216,6 +218,13 @@ def _finish(db: Session, client: MeetingBotClient, bot: MeetingBot, state: BotSt
     _set(bot, "analyzed", "Transcribed and analyzed. The dashboard is updated.")
     db.commit()
     logger.info("Bot %s: meeting %s transcribed and analyzed", bot.id, meeting.id)
+    try:
+        from app.workflows.minutes import after_analysis
+
+        after_analysis(db, get_settings(), meeting.id)
+    except Exception:  # noqa: BLE001 - the meeting is done; an email problem is logged, never fatal
+        db.rollback()
+        logger.exception("Minutes email for meeting %s failed", meeting.id)
 
 
 def _set(bot: MeetingBot, status: str, detail: str) -> None:

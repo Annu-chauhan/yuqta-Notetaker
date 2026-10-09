@@ -170,6 +170,8 @@ class MeetingBot(Base):
     # Set for bots scheduled ahead of time: when the bot joins, and the calendar event that caused it.
     join_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     calendar_event_id: Mapped[str | None] = mapped_column(String(300), index=True)
+    # Email addresses of the calendar event's attendees (who receive the minutes).
+    attendee_emails: Mapped[list[str] | None] = mapped_column(JSONType)
     detail: Mapped[str] = mapped_column(Text, default="")
     # The meeting created from the bot's transcript; kept (set NULL) if that meeting is deleted.
     meeting_id: Mapped[UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)
@@ -196,6 +198,23 @@ class ActionItem(Base):
     quote: Mapped[str | None] = mapped_column(Text)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class MinutesEmail(Base):
+    """The minutes email of one meeting: held for approval, sent, or why it was not sent."""
+
+    __tablename__ = "minutes_emails"
+    __table_args__ = (
+        CheckConstraint("status IN ('awaiting_approval', 'sent', 'failed', 'skipped')", name="status"),
+    )
+
+    meeting_id: Mapped[UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20))
+    recipients: Mapped[list[str]] = mapped_column(JSONType, default=list)
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

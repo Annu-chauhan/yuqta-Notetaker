@@ -7,6 +7,7 @@ import pytest
 
 from app.core.config import Settings, get_settings
 from app.main import app
+from app.core import mailer
 from app.workflows import reminders
 from app.workflows.action_items import today
 from app.workflows.reminders import ReminderScheduler, build_digest
@@ -40,7 +41,7 @@ class FakeSMTP:
 @pytest.fixture
 def smtp(monkeypatch: pytest.MonkeyPatch):
     FakeSMTP.sent = []
-    monkeypatch.setattr(reminders.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
     return FakeSMTP
 
 

@@ -97,6 +97,12 @@ def simplify_event(event: dict) -> dict:
         "meet_link": event.get("hangoutLink"),
         "html_link": event.get("htmlLink"),
         "attendees": attendees,
+        # Who receives the meeting minutes: attendees with an address who did not decline.
+        "attendee_emails": [
+            attendee["email"]
+            for attendee in event.get("attendees", [])
+            if attendee.get("email") and not attendee.get("resource") and attendee.get("responseStatus") != "declined"
+        ],
         # The signed-in user declined the invitation.
         "declined": any(a.get("self") and a.get("responseStatus") == "declined" for a in event.get("attendees", [])),
     }

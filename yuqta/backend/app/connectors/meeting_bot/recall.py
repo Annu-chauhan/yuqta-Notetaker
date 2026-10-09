@@ -30,11 +30,13 @@ class RecallMeetingBotClient:
         transport: httpx.BaseTransport | None = None,
         transcription: str = "recallai",
         aws_languages: str = "en-IN,hi-IN",
+        consent_message: str = "",
     ):
         if not api_key:
             raise BotError("MEETING_BOT_PROVIDER=recall needs RECALL_API_KEY.", status_code=503)
         self.language = language
         self.transcription = transcription
+        self.consent_message = consent_message
         self.aws_languages = [code.strip() for code in aws_languages.split(",") if code.strip()] or ["en-IN", "hi-IN"]
         timeout = httpx.Timeout(30.0, connect=10.0)
         self._api = httpx.Client(
@@ -53,6 +55,9 @@ class RecallMeetingBotClient:
             "recording_config": {"transcript": {"provider": self._transcript_provider()}},
             "metadata": {"source": "yuqta"},
         }
+        if self.consent_message:
+            # Tells everyone in the call that it is recorded, the moment the bot is let in.
+            body["chat"] = {"on_bot_join": {"send_to": "everyone", "message": self.consent_message}}
         if join_at is not None:
             # More than 10 minutes ahead makes this a scheduled bot, which Recall.ai guarantees joins on time.
             body["join_at"] = join_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

@@ -13,6 +13,7 @@ def _client() -> MeetingBotClient:
         return RecallMeetingBotClient(
             settings.recall_api_key, settings.recall_region, settings.recall_language,
             transcription=settings.bot_transcription, aws_languages=settings.aws_language_options,
+            consent_message=settings.bot_consent_message,
         )
     from app.connectors.meeting_bot.mock import MockMeetingBotClient
 

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # AWS Transcribe: languages to detect and switch between (first = preferred), as AWS language codes.
     aws_language_options: str = "en-IN,hi-IN"
     bot_name: str = "Yuqta Notetaker"
+    # Posted in the meeting chat (to everyone) as soon as the bot joins, so participants know they are
+    # recorded. Empty = no message (not recommended: recording people usually requires their consent).
+    bot_consent_message: str = "Hi, I'm Yuqta Notetaker. This meeting is being recorded and transcribed to create notes and action items for the team. If you do not want to be recorded, please tell the host now."
     # Daily task reminder email (off unless SMTP_HOST, SMTP_FROM and REMINDER_TO are set).
     smtp_host: str = ""
     smtp_port: int = 587
@@ -113,6 +116,14 @@ class Settings(BaseSettings):
     def subscription_format(cls, value: str) -> str:
         if value and not re.fullmatch(r"projects/[\w.:-]+/subscriptions/[\w.~%+-]+", value):
             raise ValueError("GOOGLE_PUBSUB_SUBSCRIPTION must look like projects/<project-id>/subscriptions/<name>")
+        return value
+
+    @field_validator("bot_consent_message")
+    @classmethod
+    def consent_message_fits(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) > 500:  # Google Meet's chat limit
+            raise ValueError("BOT_CONSENT_MESSAGE must be at most 500 characters (the Google Meet chat limit).")
         return value
 
     @field_validator("display_timezone")

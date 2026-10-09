@@ -80,7 +80,13 @@ function BotRow({ bot, botName }: { bot: MeetingBot; botName: string }) {
   );
 }
 
-function CalendarBox({ calendar }: { calendar: CalendarAutoJoin }) {
+function CalendarBox({ calendar, bots }: { calendar: CalendarAutoJoin; bots: MeetingBot[] }) {
+  // What is still coming, from the database: a meeting drops off once its bot joins or is cancelled.
+  const upcoming = bots
+    .filter((bot) => bot.status === "scheduled" && bot.join_at)
+    .sort((a, b) => (a.join_at ?? "").localeCompare(b.join_at ?? ""));
+  // Of the recent actions, only problems are worth showing; the bot list below shows every outcome.
+  const problems = calendar.recent.filter((line) => line.startsWith("Could not"));
   const on = calendar.enabled && calendar.google_connected && !calendar.last_error;
   const every = calendar.poll_seconds < 60 ? `${calendar.poll_seconds} s` : `${Math.round(calendar.poll_seconds / 60)} min`;
   return (
@@ -127,9 +133,25 @@ function CalendarBox({ calendar }: { calendar: CalendarAutoJoin }) {
           {calendar.last_error}
         </p>
       )}
-      {calendar.recent.length > 0 && (
-        <ul className="mt-1 list-disc pl-5 text-xs text-muted">
-          {calendar.recent.slice(0, 3).map((line, index) => (
+      {calendar.enabled && calendar.google_connected && (
+        <div className="mt-2">
+          <p className="text-xs font-medium">Next meetings Yuqta will join</p>
+          {upcoming.length === 0 ? (
+            <p className="text-xs text-muted">None in the next {calendar.hours_ahead} hours.</p>
+          ) : (
+            <ul className="mt-0.5 space-y-0.5 text-xs text-muted">
+              {upcoming.slice(0, 5).map((bot) => (
+                <li key={bot.id}>
+                  <span className="font-medium text-foreground">{bot.title}</span> · joins {formatDateTime(bot.join_at)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {problems.length > 0 && (
+        <ul className="mt-1 list-disc pl-5 text-xs text-rose-700 dark:text-rose-400">
+          {problems.slice(0, 3).map((line, index) => (
             <li key={index}>{line}</li>
           ))}
         </ul>
@@ -168,7 +190,7 @@ export function LiveMeetingsPanel({ data, calendar }: { data: MeetingBotList; ca
         <InviteBotForm />
       </div>
 
-      {calendar && <CalendarBox calendar={calendar} />}
+      {calendar && <CalendarBox calendar={calendar} bots={data.bots} />}
 
       {data.bots.length > 0 && (
         <ul className="mt-4 divide-y divide-line border-t border-line">

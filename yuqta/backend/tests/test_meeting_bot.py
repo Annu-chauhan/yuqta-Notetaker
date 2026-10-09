@@ -302,3 +302,31 @@ def test_delete_bot_entry_and_its_meeting(bots: TestClient, clock: Clock) -> Non
     clock.now += 10
     assert _check(bots)["status"] == "failed"
     assert bots.delete(f"/api/bots/{failed['id']}").status_code == 204  # failed entry, no meeting
+
+
+def test_recall_bot_posts_the_consent_notice_when_it_joins() -> None:
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201, json={"id": "bot-1"})
+
+    transport = httpx.MockTransport(handler)
+    RecallMeetingBotClient("k", "us-west-2", transport=transport, consent_message="This meeting is recorded.").create_bot(
+        "https://meet.google.com/abc-defg-hij", "Yuqta"
+    )
+    RecallMeetingBotClient("k", "us-west-2", transport=transport, consent_message="").create_bot(
+        "https://meet.google.com/abc-defg-hij", "Yuqta"
+    )
+    assert bodies[0]["chat"] == {"on_bot_join": {"send_to": "everyone", "message": "This meeting is recorded."}}
+    assert "chat" not in bodies[1]
+
+
+def test_consent_message_defaults_on_and_respects_the_meet_limit() -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    assert "recorded" in Settings(_env_file=None).bot_consent_message
+    with pytest.raises(ValidationError, match="500 characters"):
+        Settings(_env_file=None, bot_consent_message="x" * 501)

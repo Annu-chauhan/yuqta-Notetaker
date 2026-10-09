@@ -43,6 +43,7 @@ class BotOut(BaseModel):
 class BotList(BaseModel):
     provider: str
     bot_name: str
+    consent_message: str  # posted in the meeting chat when the bot joins; empty = none
     poll_seconds: int
     last_poll_at: str | None
     bots: list[BotOut]
@@ -52,6 +53,7 @@ def _bot_list(db: Session, settings: Settings) -> BotList:
     return BotList(
         provider=settings.meeting_bot_provider,
         bot_name=settings.bot_name,
+        consent_message=settings.bot_consent_message,
         poll_seconds=settings.bot_poll_seconds,
         last_poll_at=meeting_bot_poller.last_poll_at,
         bots=[BotOut.model_validate(bot) for bot in list_bots(db)],

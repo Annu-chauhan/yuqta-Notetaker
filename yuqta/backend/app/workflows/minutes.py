@@ -54,13 +54,13 @@ def _bot(db: Session, meeting_id: UUID) -> MeetingBot | None:
 def admin_recipients(db: Session, settings: Settings, meeting_id: UUID) -> list[str]:
     """Who gets the recording with the summary.
 
-    The registered Google account (the one whose calendar had the meeting, else the primary one) always does;
+    Every registered Google account whose calendar had the meeting (else the primary one) always does;
     the organizer or the admin typed when sending the bot also does when inside the organisation (an outside
     organizer is left out: the recording is not sent outside automatically). MEETING_ADMIN_EMAIL is the fallback.
     """
     bot = _bot(db, meeting_id)
     registered = registered_emails(settings)
-    account = parse_addresses([bot.account_email]) if bot and bot.account_email else []
+    account = parse_addresses(bot.account_email) if bot and bot.account_email else []  # comma-separated
     admins = account or registered[:1]
     named = parse_addresses([bot.admin_email]) if bot and bot.admin_email else []
     admins += [a for a in named if a in registered or not external_recipients(settings, [a])]

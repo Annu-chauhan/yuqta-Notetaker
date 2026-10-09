@@ -174,8 +174,8 @@ class MeetingBot(Base):
     attendee_emails: Mapped[list[str] | None] = mapped_column(JSONType)
     # The meeting's admin (calendar organizer, or given when sending the bot): gets the recording link.
     admin_email: Mapped[str | None] = mapped_column(String(320))
-    # The registered Google account whose calendar the meeting came from (calendar auto-join).
-    account_email: Mapped[str | None] = mapped_column(String(320))
+    # The registered Google accounts whose calendars have the meeting (calendar auto-join), comma-separated.
+    account_email: Mapped[str | None] = mapped_column(String(1000))
     detail: Mapped[str] = mapped_column(Text, default="")
     # The meeting created from the bot's transcript; kept (set NULL) if that meeting is deleted.
     meeting_id: Mapped[UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)

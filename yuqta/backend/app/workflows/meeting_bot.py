@@ -88,7 +88,7 @@ def send_bot(
         calendar_event_id=calendar_event_id,
         attendee_emails=attendee_emails or None,
         admin_email=(admin_email or "").strip().lower() or None,
-        account_email=(account_email or "").strip().lower() or None,
+        account_email=(account_email or "").replace(" ", "").lower() or None,
     )
     db.add(bot)
     db.commit()

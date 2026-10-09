@@ -73,7 +73,9 @@ class CalendarAutoJoiner:
             # Unique problems only; a network outage would otherwise repeat once per account.
             self.last_error = " ".join(dict.fromkeys(problems)) or None
             horizon = now + timedelta(hours=hours_ahead)
-            wanted, seen_meetings = {}, set()
+            wanted, seen_meetings = {}, {}
+            # Every registered account that has the meeting on its calendar gets the recording, not only the first.
+            accounts_for: dict[tuple, list[str]] = {}
             for event in events:
                 start, end = _time(event.get("start")), _time(event.get("end"))
                 url = normalize_meeting_url(event.get("meet_link") or "") if event.get("meet_link") else None
@@ -81,10 +83,16 @@ class CalendarAutoJoiner:
                         or start > horizon or (end is not None and end <= now)):
                     continue
                 meeting = (url, start)  # the same meeting on several people's calendars gets one bot
+                if event.get("account"):
+                    accounts_for.setdefault(meeting, [])
+                    if event["account"] not in accounts_for[meeting]:
+                        accounts_for[meeting].append(event["account"])
                 if meeting in seen_meetings or event["id"] in wanted:
                     continue
-                seen_meetings.add(meeting)
+                seen_meetings[meeting] = event["id"]
                 wanted[event["id"]] = (event, url, start)
+            for meeting, event_id in seen_meetings.items():
+                wanted[event_id][0]["accounts"] = accounts_for.get(meeting, [])
 
             with session_factory() as db:
                 # If a calendar could not be read, its meetings would look deleted: cancel nothing this time.
@@ -116,6 +124,10 @@ class CalendarAutoJoiner:
             join_at = start - JOIN_EARLY
             bot = known.get(event_id)
             title = event.get("title") or "Calendar meeting"
+            accounts = ",".join(event.get("accounts") or ([event["account"]] if event.get("account") else []))
+            if bot is not None and accounts and bot.account_email != accounts and bot.status not in ("analyzed", "failed", "cancelled"):
+                bot.account_email = accounts  # someone registered was invited later: they get the recording too
+                db.commit()
             if bot is not None:
                 moved = bot.status == "scheduled" and bot.join_at is not None and _aware(bot.join_at) != join_at
                 if not moved or _aware(bot.join_at) - now <= CHANGEABLE_BEFORE:
@@ -128,7 +140,7 @@ class CalendarAutoJoiner:
                     attendee_emails=event.get("attendee_emails") or [],
                     # The organizer is the meeting's admin; else the account whose calendar it is on.
                     admin_email=event.get("organizer_email"),
-                    account_email=event.get("account"),  # the registered account: always gets the recording
+                    account_email=accounts or None,  # every registered account with this meeting: gets the recording
                 )
             except BotError as error:
                 logger.warning("Calendar auto-join could not schedule %s: %s", event_id, error)

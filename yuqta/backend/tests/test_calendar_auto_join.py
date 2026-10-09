@@ -197,3 +197,30 @@ def test_one_failing_account_cancels_nothing(memory_db, client) -> None:
     _run(joiner, calendars, client, memory_db)
     assert set(_bots(memory_db)) == {"mine:scheduled", "hers:scheduled"}
     assert "kirty@example.com expired" in joiner.last_error
+
+
+def test_every_registered_account_with_the_meeting_gets_the_recording(memory_db, client) -> None:
+    from sqlalchemy import select
+
+    from app.core.config import Settings
+    from app.workflows.minutes import admin_recipients
+
+    shared = lambda eid: event(eid, timedelta(hours=2))  # noqa: E731 - same link and time on each calendar
+    joiner = CalendarAutoJoiner()
+    _run(joiner, TwoCalendars({"parul@example.com": [shared("p")], "kirty@example.com": []}), client, memory_db)
+    # Kirty is invited later: the already scheduled bot now covers her too, without a second bot.
+    _run(joiner, TwoCalendars({"parul@example.com": [shared("p")], "kirty@example.com": [shared("k")]}), client, memory_db)
+    with memory_db() as db:
+        [bot] = db.scalars(select(MeetingBot)).all()
+        assert bot.account_email == "parul@example.com,kirty@example.com"
+    settings = Settings(_env_file=None, gmail_send=False)
+    with memory_db() as db:
+        meeting_bot = db.scalars(select(MeetingBot)).one()
+        from app.db.models import Meeting
+
+        meeting = Meeting(title="x", participants=[], source="mock_bot", status="analyzed")
+        db.add(meeting)
+        db.flush()
+        meeting_bot.meeting_id = meeting.id
+        db.commit()
+        assert admin_recipients(db, settings, meeting.id) == ["parul@example.com", "kirty@example.com"]

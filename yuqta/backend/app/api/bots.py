@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.connectors.meeting_bot import BotError, MeetingBotClient, get_meeting_bot_client, normalize_meeting_url
+from app.core.mailer import parse_addresses
 from app.core.config import Settings, get_settings
 from app.db.models import MeetingBot
 from app.db.session import get_db, get_session_factory
@@ -21,6 +22,8 @@ router = APIRouter(prefix="/api/bots", tags=["meeting bots"])
 class SendBotRequest(BaseModel):
     meeting_url: str = Field(min_length=1, max_length=500)
     title: str = Field(default="", max_length=300)
+    # Gets the recording link with the summary after the meeting (default: MEETING_ADMIN_EMAIL).
+    admin_email: str = Field(default="", max_length=320)
 
 
 class BotOut(BaseModel):
@@ -78,7 +81,10 @@ def create_bot(
         raise HTTPException(status_code=422, detail="Paste a Google Meet, Zoom or Microsoft Teams meeting link.")
     title = " ".join(body.title.split()) or "Live meeting"
     try:
-        bot = send_bot(db, client, meeting_url, title, settings.bot_name)
+        admin = parse_addresses(body.admin_email or settings.meeting_admin_email)
+        if body.admin_email.strip() and not admin:
+            raise HTTPException(status_code=422, detail="The admin email address is not valid.")
+        bot = send_bot(db, client, meeting_url, title, settings.bot_name, admin_email=admin[0] if admin else None)
     except BotError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     return BotOut.model_validate(bot)

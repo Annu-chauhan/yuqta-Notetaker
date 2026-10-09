@@ -97,6 +97,7 @@ def simplify_event(event: dict) -> dict:
         "meet_link": event.get("hangoutLink"),
         "html_link": event.get("htmlLink"),
         "attendees": attendees,
+        "organizer_email": (event.get("organizer") or {}).get("email"),
         # Who receives the meeting minutes: attendees with an address who did not decline.
         "attendee_emails": [
             attendee["email"]

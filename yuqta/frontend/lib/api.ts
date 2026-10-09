@@ -388,7 +388,7 @@ export type MeetingBotList = {
 };
 
 export const listBots = () => request<MeetingBotList>("/api/bots");
-export const sendBot = (body: { meeting_url: string; title: string }) =>
+export const sendBot = (body: { meeting_url: string; title: string; admin_email?: string }) =>
   request<MeetingBot>("/api/bots", { ...json(body), timeoutMs: 30_000 });
 export const deleteBot = (botId: string) =>
   request<void>(`/api/bots/${encodeURIComponent(botId)}`, { method: "DELETE", timeoutMs: 30_000 });
@@ -536,6 +536,9 @@ export type MinutesStatus = {
   subject: string | null;
   sent_at: string | null;
   preview_html: string | null;
+  admin_email: string | null;
+  admin_sent_at: string | null;
+  admin_detail: string;
 };
 
 export async function getMinutes(meetingId: string): Promise<MinutesStatus | null> {
@@ -549,3 +552,13 @@ export async function getMinutes(meetingId: string): Promise<MinutesStatus | nul
 
 export const sendMinutes = (meetingId: string, recipients: string[]) =>
   request<MinutesStatus>(`/api/meetings/${encodeURIComponent(meetingId)}/minutes/send`, { ...json({ recipients }), timeoutMs: 60_000 });
+
+/** A fresh link to the meeting video (valid ~6 hours); null when there is none. */
+export async function getRecordingUrl(meetingId: string): Promise<{ url: string } | { error: string }> {
+  try {
+    return await request<{ url: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/recording`, { timeoutMs: 30_000 });
+  } catch (error) {
+    if (error instanceof ApiError) return { error: error.message };
+    throw error;
+  }
+}

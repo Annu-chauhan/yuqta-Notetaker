@@ -70,6 +70,7 @@ def send_bot(
     join_at: datetime | None = None,
     calendar_event_id: str | None = None,
     attendee_emails: list[str] | None = None,
+    admin_email: str | None = None,
 ) -> MeetingBot:
     """Sends the bot now, or schedules it for join_at (a time in the future)."""
     scheduled = join_at is not None and join_at > datetime.now(timezone.utc)
@@ -85,6 +86,7 @@ def send_bot(
         join_at=join_at if scheduled else None,
         calendar_event_id=calendar_event_id,
         attendee_emails=attendee_emails or None,
+        admin_email=(admin_email or "").strip().lower() or None,
     )
     db.add(bot)
     db.commit()
@@ -221,7 +223,7 @@ def _finish(db: Session, client: MeetingBotClient, bot: MeetingBot, state: BotSt
     try:
         from app.workflows.minutes import after_analysis
 
-        after_analysis(db, get_settings(), meeting.id)
+        after_analysis(db, get_settings(), meeting.id, recording_url=lambda: client.get_recording_url(bot.external_id))
     except Exception:  # noqa: BLE001 - the meeting is done; an email problem is logged, never fatal
         db.rollback()
         logger.exception("Minutes email for meeting %s failed", meeting.id)

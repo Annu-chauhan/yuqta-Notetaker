@@ -43,6 +43,9 @@ class MeetingBotClient(Protocol):
     def delete_scheduled_bot(self, bot_id: str) -> None:
         """Cancels a bot that has not started joining yet."""
 
+    def get_recording_url(self, bot_id: str) -> str | None:
+        """A fresh, temporary link to the meeting video; None while it is not ready (or never recorded)."""
+
     def get_bot(self, bot_id: str) -> BotState: ...
 
     def leave_call(self, bot_id: str) -> None: ...

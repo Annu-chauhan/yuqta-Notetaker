@@ -41,6 +41,9 @@ class MockMeetingBotClient:
         start = join_at.timestamp() if join_at is not None else self._clock()
         return f"mock-{int(start * 1000)}-{secrets.token_hex(4)}"
 
+    def get_recording_url(self, bot_id: str) -> str | None:
+        return None  # the simulated bot records no video
+
     def delete_scheduled_bot(self, bot_id: str) -> None:
         if self._clock() >= self._sent_at(bot_id):
             raise BotError("The bot has already started joining.", status_code=400, permanent=True)

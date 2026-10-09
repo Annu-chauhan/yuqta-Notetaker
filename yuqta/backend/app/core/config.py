@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     # recipient is outside your organisation: then it waits for approval).
     minutes_email: Literal["off", "review", "auto"] = "off"
     minutes_to: str = ""  # always receive the minutes, e.g. the team list (comma-separated)
-    internal_domains: str = ""  # e.g. iqlytics.in; addresses elsewhere count as external  # local hour (DISPLAY_TIMEZONE) after which the day's reminder is sent
+    internal_domains: str = ""
+    # Who gets the recording with the summary when a meeting has no calendar organizer (bots sent by hand).
+    meeting_admin_email: str = ""  # e.g. iqlytics.in; addresses elsewhere count as external  # local hour (DISPLAY_TIMEZONE) after which the day's reminder is sent
     # Calendar auto-join: send the bot to every Google Meet on the connected Google Calendar.
     auto_join_calendar: bool = False
     auto_join_hours_ahead: int = 24

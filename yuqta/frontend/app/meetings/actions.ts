@@ -82,10 +82,11 @@ export async function uploadAudioAction(_: ActionState, formData: FormData): Pro
 export async function sendBotAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const meetingUrl = String(formData.get("meeting_url") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim().slice(0, 300);
+  const adminEmail = String(formData.get("admin_email") ?? "").trim().slice(0, 320);
   if (!meetingUrl) return { error: "Paste the meeting link." };
   if (meetingUrl.length > 500) return { error: "That link is too long." };
   try {
-    await sendBot({ meeting_url: meetingUrl, title });
+    await sendBot({ meeting_url: meetingUrl, title, admin_email: adminEmail });
   } catch (error) {
     unstable_rethrow(error);
     return { error: errorMessage(error, "Could not send Yuqta to the meeting.") };

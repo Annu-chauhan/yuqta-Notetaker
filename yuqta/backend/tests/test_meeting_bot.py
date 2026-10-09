@@ -330,3 +330,15 @@ def test_consent_message_defaults_on_and_respects_the_meet_limit() -> None:
     assert "recorded" in Settings(_env_file=None).bot_consent_message
     with pytest.raises(ValidationError, match="500 characters"):
         Settings(_env_file=None, bot_consent_message="x" * 501)
+
+
+def test_recall_recording_link_is_read_fresh_from_the_bot() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"recordings": [{"media_shortcuts": {
+            "video_mixed": {"status": {"code": "done"}, "data": {"download_url": "https://s3.example/video.mp4?sig=1"}}}}]})
+
+    client = RecallMeetingBotClient("k", "us-west-2", transport=httpx.MockTransport(handler))
+    assert client.get_recording_url("bot-1") == "https://s3.example/video.mp4?sig=1"
+
+    empty = RecallMeetingBotClient("k", "us-west-2", transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"recordings": []})))
+    assert empty.get_recording_url("bot-1") is None

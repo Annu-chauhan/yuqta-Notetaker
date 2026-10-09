@@ -11,7 +11,7 @@ const inputClass =
 export function InviteBotForm() {
   const [state, action, pending] = useActionState(sendBotAction, initialState);
   return (
-    <form action={action} className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
+    <form action={action} className="grid gap-3 sm:grid-cols-[2fr_1fr] sm:items-end">
       <div>
         <label htmlFor="meeting_url" className="mb-1 block text-xs font-medium">Meeting link</label>
         <input
@@ -29,6 +29,12 @@ export function InviteBotForm() {
         <label htmlFor="bot_title" className="mb-1 block text-xs font-medium">Meeting name (optional)</label>
         <input id="bot_title" name="title" maxLength={300} placeholder="e.g. Weekly revenue review" className={inputClass} />
       </div>
+      <div>
+        <label htmlFor="admin_email" className="mb-1 block text-xs font-medium">
+          Admin email <span className="font-normal text-muted">(optional: gets the recording and summary)</span>
+        </label>
+        <input id="admin_email" name="admin_email" type="email" maxLength={320} autoComplete="email" placeholder="host@company.com" className={inputClass} />
+      </div>
       <button
         type="submit"
         disabled={pending}
@@ -37,7 +43,7 @@ export function InviteBotForm() {
         {pending ? "Sending…" : "Send Yuqta to the meeting"}
       </button>
       {state.error && (
-        <p role="alert" className="text-sm text-rose-600 sm:col-span-3 dark:text-rose-400">
+        <p role="alert" className="text-sm text-rose-600 sm:col-span-2 dark:text-rose-400">
           {state.error}
         </p>
       )}

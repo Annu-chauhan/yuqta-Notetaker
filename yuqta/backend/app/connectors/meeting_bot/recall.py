@@ -96,6 +96,15 @@ class RecallMeetingBotClient:
     def get_bot(self, bot_id: str) -> BotState:
         return bot_state(self._request("GET", f"/bot/{bot_id}/"))
 
+    def get_recording_url(self, bot_id: str) -> str | None:
+        # Recall.ai keeps the video and signs a new download link (valid ~6 hours) on every request.
+        for recording in self._request("GET", f"/bot/{bot_id}/").get("recordings") or []:
+            video = ((recording.get("media_shortcuts") or {}).get("video_mixed")) or {}
+            url = (video.get("data") or {}).get("download_url")
+            if url and ((video.get("status") or {}).get("code") in (None, "done")):
+                return url
+        return None
+
     def delete_scheduled_bot(self, bot_id: str) -> None:
         self._request("DELETE", f"/bot/{bot_id}/")
 

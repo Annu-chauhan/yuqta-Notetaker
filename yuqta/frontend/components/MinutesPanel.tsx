@@ -15,7 +15,17 @@ const statusText: Record<MinutesStatus["status"], { label: string; className: st
   skipped: { label: "Not sent", className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
 };
 
-export function MinutesPanel({ meetingId, minutes, sentAt }: { meetingId: string; minutes: MinutesStatus; sentAt: string | null }) {
+export function MinutesPanel({
+  meetingId,
+  minutes,
+  sentAt,
+  adminSentAt,
+}: {
+  meetingId: string;
+  minutes: MinutesStatus;
+  sentAt: string | null;
+  adminSentAt: string | null;
+}) {
   const [state, action, pending] = useActionState(sendMinutesAction, initialState);
   const badge = statusText[minutes.status];
   const external = new Set(minutes.external);
@@ -35,6 +45,19 @@ export function MinutesPanel({ meetingId, minutes, sentAt }: { meetingId: string
               ? "Automatic minutes are off (MINUTES_EMAIL=off). You can still send them by hand."
               : "Summary, decisions, action items, risks and open questions, emailed to the participants.")}
       </p>
+
+      {minutes.admin_email && (
+        <p className="mt-2 text-sm">
+          <span className="font-medium">Admin</span> {minutes.admin_email}:{" "}
+          {adminSentAt ? (
+            <span className="text-emerald-700 dark:text-emerald-400">recording and summary sent {adminSentAt}</span>
+          ) : minutes.admin_detail ? (
+            <span className="text-rose-700 dark:text-rose-400">{minutes.admin_detail}</span>
+          ) : (
+            <span className="text-muted">gets the recording and summary when the meeting is processed</span>
+          )}
+        </p>
+      )}
 
       {!minutes.mail_configured ? (
         <p className="mt-3 text-sm text-amber-800 dark:text-amber-300">

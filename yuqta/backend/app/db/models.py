@@ -172,6 +172,8 @@ class MeetingBot(Base):
     calendar_event_id: Mapped[str | None] = mapped_column(String(300), index=True)
     # Email addresses of the calendar event's attendees (who receive the minutes).
     attendee_emails: Mapped[list[str] | None] = mapped_column(JSONType)
+    # The meeting's admin (calendar organizer, or given when sending the bot): gets the recording link.
+    admin_email: Mapped[str | None] = mapped_column(String(320))
     detail: Mapped[str] = mapped_column(Text, default="")
     # The meeting created from the bot's transcript; kept (set NULL) if that meeting is deleted.
     meeting_id: Mapped[UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)
@@ -215,6 +217,10 @@ class MinutesEmail(Base):
     subject: Mapped[str] = mapped_column(String(300), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The admin's own copy, with the recording link (sent separately from the attendees' minutes).
+    admin_email: Mapped[str | None] = mapped_column(String(320))
+    admin_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    admin_detail: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

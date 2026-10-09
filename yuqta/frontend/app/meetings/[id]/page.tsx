@@ -49,6 +49,16 @@ export default async function MeetingPage({ params }: PageProps<"/meetings/[id]"
           <h1 className="text-3xl font-bold tracking-tight">{meeting.title}</h1>
           <div className="flex items-center gap-3">
             <StatusBadge status={meeting.status} />
+            {meeting.source.endsWith("_bot") && (
+              <a
+                href={`/meetings/${meeting.id}/recording`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center rounded-md border border-line bg-surface px-3 text-sm font-medium hover:bg-background"
+              >
+                ▶ Watch recording
+              </a>
+            )}
             <DeleteMeetingButton meetingId={meeting.id} title={meeting.title} redirectTo="/meetings" showText />
           </div>
         </div>
@@ -104,6 +114,7 @@ export default async function MeetingPage({ params }: PageProps<"/meetings/[id]"
                   meetingId={meeting.id}
                   minutes={minutes}
                   sentAt={minutes.sent_at ? formatDateTime(minutes.sent_at) : null}
+                  adminSentAt={minutes.admin_sent_at ? formatDateTime(minutes.admin_sent_at) : null}
                 />
               )}
             </>

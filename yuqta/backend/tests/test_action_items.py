@@ -1,6 +1,6 @@
 """Action item tracking: tasks from meetings get a status, a real due date, and survive re-analysis."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -71,7 +71,11 @@ def test_status_owner_and_due_date_updates_survive_reanalysis(api: TestClient) -
 def test_views_and_owner_filter(api: TestClient) -> None:
     _meeting(api, LINES)
     assert [t["owner"] for t in _tasks(api, "open", owner="Ravi")["tasks"]] == ["Ravi"]
-    assert len(_tasks(api, "due_soon")["tasks"]) == 2  # tomorrow and next week; undated is not "due soon"
+    # "Due in 7 days" holds tomorrow's task, and next week's only when that Friday is within 7 days
+    # (from a Monday it is 11 days away). Undated tasks are never "due soon".
+    dated = [t for t in _tasks(api)["tasks"] if t["due_date"]]
+    expected = sum(1 for t in dated if (date.fromisoformat(t["due_date"]) - today()).days <= 7)
+    assert len(_tasks(api, "due_soon")["tasks"]) == expected >= 1
     assert _tasks(api, "done")["tasks"] == []
 
 

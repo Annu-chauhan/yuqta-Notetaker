@@ -187,7 +187,21 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
                       {account.missing_scopes.length > 0 && (
                         <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">Calendar or Meet access missing: reconnect</span>
                       )}
+                      {account.can_send_email ? (
+                        <span className="ml-2 text-xs text-emerald-700 dark:text-emerald-400">✓ can send email</span>
+                      ) : (
+                        <span className="ml-2 text-xs text-rose-700 dark:text-rose-400">
+                          ✕ email not allowed: recordings, minutes and reminders cannot be sent
+                        </span>
+                      )}
                     </p>
+                    {!account.can_send_email && (
+                      <form action={connectGoogleAction}>
+                        <button type="submit" className={primary} title={`Sign in as ${account.email ?? "this account"} and tick "Send email on your behalf"`}>
+                          Allow email
+                        </button>
+                      </form>
+                    )}
                     <form action={disconnectGoogleAction}>
                       <input type="hidden" name="account" value={account.email ?? ""} />
                       <button type="submit" className={secondary} aria-label={`Disconnect ${account.email ?? "account"}`}>

@@ -93,9 +93,14 @@ class GoogleConnector:
         return next(iter(self._connections.values()), None)
 
     def accounts(self) -> list[dict]:
-        """Connected accounts in connection order: [{"email", "name", "missing_scopes"}]."""
+        """Connected accounts in connection order: [{"email", "name", "missing_scopes", "can_send_email"}]."""
         return [
-            {**connection.account, "missing_scopes": self._missing_scopes(connection)}
+            {
+                **connection.account,
+                "missing_scopes": self._missing_scopes(connection),
+                # Granted "send email" (gmail.send): Yuqta can email the recording, minutes and reminders from it.
+                "can_send_email": GMAIL_SEND_SCOPE in (connection.tokens.get("scope") or "").split(),
+            }
             for connection in self._connections.values()
         ]
 

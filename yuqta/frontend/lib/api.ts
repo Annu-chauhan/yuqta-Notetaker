@@ -267,7 +267,7 @@ export type GoogleStatus = {
   account: { email: string | null; name: string | null } | null;
   missing_scopes: string[];
   /** Every connected Google account; the first is the primary one (Import page, transcript import). */
-  accounts: { email: string | null; name: string | null; missing_scopes: string[] }[];
+  accounts: { email: string | null; name: string | null; missing_scopes: string[]; can_send_email?: boolean }[];
 };
 
 export type GoogleEvent = {

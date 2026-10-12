@@ -162,13 +162,13 @@ def change_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db)) -
 def reminder_status(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
     """Whether reminders are set up, when the last one went out, and what today's would contain."""
     from app.db.models import ReminderLog
-    from app.workflows.reminders import build_digest, configured, reminder_scheduler
+    from app.workflows.reminders import build_digest, configured, reminder_scheduler, _recipients as reminder_recipients
 
     last = db.scalars(select(ReminderLog).where(ReminderLog.recipients != "").order_by(ReminderLog.day.desc())).first()
     digest = build_digest(db, settings.frontend_url)
     return {
         "configured": configured(settings),
-        "recipients": [a.strip() for a in settings.reminder_to.split(",") if a.strip()],
+        "recipients": reminder_recipients(settings),  # REMINDER_TO, else the registered Google account
         "hour": settings.reminder_hour,
         "timezone": settings.display_timezone,
         "last_sent": {"day": last.day, "subject": last.subject} if last else None,
